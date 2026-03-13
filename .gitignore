@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+model_outputs/
+model_outputs_ml/
+model_outputs_ml_elasticnet/
+model_outputs_ml_lgbm/
+数据.xlsx
+~$*.xlsx
+*.docx
+~$*.docx
+.DS_Store
