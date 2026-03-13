@@ -113,6 +113,8 @@ def build_signal_panel_custom(
     score = cfg.score_momentum_weight * mom_z + cfg.score_fundamental_weight * fund_z
     score = score.where(weekly_ret.notna(), np.nan)
 
+    vol_12w = weekly_ret.reindex(columns=ASSETS).rolling(cfg.ivw_weeks).std() * np.sqrt(52)
+
     return pd.concat(
         {
             "price": weekly_prices.reindex(columns=ASSETS),
@@ -120,12 +122,13 @@ def build_signal_panel_custom(
             "mom_raw": mom_raw.reindex(columns=ASSETS),
             "fund_raw": fund.reindex(columns=ASSETS),
             "score": score.reindex(columns=ASSETS),
+            "vol_12w": vol_12w,
         },
         axis=1,
     )
 
 
-def run_model(prices, facts, fw, cost_bps, mom_w, mom_lb, mom_weights):
+def run_model(prices, facts, fw, cost_bps, mom_w, mom_lb, mom_weights, use_ivw=False, ivw_weeks=12):
     cfg = BacktestConfig(
         cost_bps=cost_bps,
         momentum_lookback_weeks=mom_lb,
@@ -135,6 +138,8 @@ def run_model(prices, facts, fw, cost_bps, mom_w, mom_lb, mom_weights):
         mom_w_short=mom_weights["w_short"],
         mom_w_mid=mom_weights["w_mid"],
         mom_w_long=mom_weights["w_long"],
+        use_ivw=use_ivw,
+        ivw_weeks=ivw_weeks,
     )
     cfg.max_weight_per_asset = 1.0
     cfg.max_weight_per_sector = 1.0
@@ -213,6 +218,9 @@ def build_excel(weights: pd.DataFrame, strategy_ret: pd.Series, nav: pd.Series, 
 with st.sidebar:
     st.header("⚙️ 全局参数")
     cost_bps = st.slider("交易成本 (bps)", 0.0, 50.0, 0.0, 1.0)
+    use_ivw = st.checkbox("反波动率加权", value=False, help="勾选后按各资产波动率倒数调整权重，波动小的资产多配，有助于降低回撤")
+    if use_ivw:
+        ivw_weeks = st.slider("波动率回溯周数", 4, 52, 12, 1, help="计算反波动率加权所用的滚动波动率窗口")
     mom_weight = st.slider("动量权重", 0.0, 1.0, 0.6, 0.05,
                            help="基本面权重 = 1 - 动量权重")
     st.caption(f"→ 动量 {mom_weight:.0%}  /  基本面 {1-mom_weight:.0%}")
@@ -292,7 +300,8 @@ mom_weights = {"w_short": mw_short, "w_mid": mw_mid, "w_long": mw_long}
 if "result" not in st.session_state or run_btn:
     with st.spinner("回测计算中..."):
         weights, strategy_ret, nav = run_model(
-            weekly_prices, factors, fund_weights, cost_bps, mom_weight, mom_lookback, mom_weights
+            weekly_prices, factors, fund_weights, cost_bps, mom_weight, mom_lookback, mom_weights,
+            use_ivw, ivw_weeks if use_ivw else 12
         )
     st.session_state.result = (weights, strategy_ret, nav)
 
@@ -405,17 +414,39 @@ with st.expander("分时段绩效"):
         ("近1年",    last_dt - pd.DateOffset(years=1)),
         ("全样本",   strategy_ret.index.min()),
     ]
+    # 近1个月、近3个月显示区间累计收益，避免年化放大失真
+    SHORT_LABELS = {"近1个月", "近3个月"}
     rows = []
     for label, since in periods:
         subset = strategy_ret[strategy_ret.index >= since]
         p = calc_perf(subset)
-        rows.append({"时段": label, **p})
+        weeks = int(p["weeks"])
+        if label in SHORT_LABELS:
+            cum_ret = float((1 + subset.fillna(0)).prod() - 1)
+            def fmt_f(v): return f"{v:.2f}" if not (isinstance(v, float) and math.isnan(v)) else "N/A"
+            row = {
+                "时段": label,
+                "收益（累计）": f"{cum_ret:.1%}",
+                "年化波动": f"{p['ann_vol']:.1%}" if not math.isnan(p['ann_vol']) else "N/A",
+                "Sharpe": fmt_f(p["sharpe"]),
+                "最大回撤": f"{p['max_drawdown']:.1%}" if not math.isnan(p['max_drawdown']) else "N/A",
+                "Calmar": "N/A",
+                "胜率": f"{p['win_rate']:.1%}" if not math.isnan(p['win_rate']) else "N/A",
+                "周数": str(weeks),
+            }
+        else:
+            def fmt_pct(v): return f"{v:.1%}" if not (isinstance(v, float) and math.isnan(v)) else "N/A"
+            def fmt_f(v):   return f"{v:.2f}" if not (isinstance(v, float) and math.isnan(v)) else "N/A"
+            row = {
+                "时段": label,
+                "收益（累计）": f"{p['ann_return']:.1%}（年化）",
+                "年化波动": fmt_pct(p["ann_vol"]),
+                "Sharpe": fmt_f(p["sharpe"]),
+                "最大回撤": fmt_pct(p["max_drawdown"]),
+                "Calmar": fmt_f(p["calmar"]),
+                "胜率": fmt_pct(p["win_rate"]),
+                "周数": str(weeks),
+            }
+        rows.append(row)
     perf_tbl = pd.DataFrame(rows)
-    pct_cols = ["ann_return", "ann_vol", "max_drawdown", "win_rate"]
-    for col in pct_cols:
-        perf_tbl[col] = perf_tbl[col].map(lambda v: f"{v:.1%}" if not (isinstance(v, float) and math.isnan(v)) else "N/A")
-    perf_tbl["sharpe"] = perf_tbl["sharpe"].map(lambda v: f"{v:.2f}" if not (isinstance(v, float) and math.isnan(v)) else "N/A")
-    perf_tbl["calmar"] = perf_tbl["calmar"].map(lambda v: f"{v:.2f}" if not (isinstance(v, float) and math.isnan(v)) else "N/A")
-    perf_tbl["weeks"]  = perf_tbl["weeks"].astype(str)
-    perf_tbl.columns   = ["时段", "年化收益", "年化波动", "Sharpe", "最大回撤", "Calmar", "胜率", "周数"]
     st.dataframe(perf_tbl, hide_index=True, use_container_width=True)

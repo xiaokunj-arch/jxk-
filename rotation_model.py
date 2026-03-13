@@ -68,6 +68,8 @@ class BacktestConfig:
     mom_w_short: float = 0.25   # 短期动量（4周）权重
     mom_w_mid: float = 0.50     # 中期动量（12周）权重
     mom_w_long: float = 0.25    # 长期动量（52周）权重
+    use_ivw: bool = False        # 是否启用反波动率加权
+    ivw_weeks: int = 12          # 反波动率加权的波动率回溯周数
 
 
 def parse_args() -> argparse.Namespace:
@@ -226,6 +228,9 @@ def build_signal_panel(weekly_prices: pd.DataFrame, factors: Dict[str, pd.Series
     score = cfg.score_momentum_weight * mom_z + cfg.score_fundamental_weight * fund_z
     score = score.where(weekly_ret.notna(), np.nan)
 
+    # 12周滚动年化波动率（用于反波动率加权）
+    vol_12w = weekly_ret.reindex(columns=ASSETS).rolling(cfg.ivw_weeks).std() * np.sqrt(52)
+
     panel = pd.concat(
         {
             "price": weekly_prices.reindex(columns=ASSETS),
@@ -233,6 +238,7 @@ def build_signal_panel(weekly_prices: pd.DataFrame, factors: Dict[str, pd.Series
             "mom_raw": mom_raw.reindex(columns=ASSETS),
             "fund_raw": fund.reindex(columns=ASSETS),
             "score": score.reindex(columns=ASSETS),
+            "vol_12w": vol_12w,
         },
         axis=1,
     )
@@ -302,8 +308,10 @@ def run_backtest(signal_panel: pd.DataFrame, cfg: BacktestConfig) -> Tuple[pd.Da
     """
     score = signal_panel["score"].copy()
     rets = signal_panel["weekly_ret"].copy()
+    vol = signal_panel["vol_12w"].copy()
     score = score[score.index >= pd.Timestamp(cfg.start_date)]
     rets = rets.reindex(score.index)
+    vol = vol.reindex(score.index)
 
     weight_rows = []
     strat_rets = []
@@ -322,6 +330,15 @@ def run_backtest(signal_panel: pd.DataFrame, cfg: BacktestConfig) -> Tuple[pd.Da
                 for c in chosen:
                     target[c] = min(eq_w, cfg.max_weight_per_asset)
             target = _cap_turnover(target, prev_w, cfg.max_turnover)
+
+        # 反波动率加权：将目标权重乘以各资产波动率倒数再归一化
+        if cfg.use_ivw:
+            vol_row = vol.loc[dt].reindex(ASSETS)
+            inv_vol = 1.0 / vol_row.replace(0, np.nan).fillna(0.2)
+            inv_vol = inv_vol.where(target > 1e-10, 0.0)
+            total_inv = inv_vol.sum()
+            if total_inv > 0:
+                target = inv_vol / total_inv
         turnover = float((target - prev_w).abs().sum())
         trade_cost = turnover * cfg.cost_bps / 10000.0
 
