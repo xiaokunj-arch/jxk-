@@ -56,11 +56,6 @@ if not WORKBOOK_PATH.exists():
 
 weekly_prices, factors = load_data()
 
-with st.expander("🔍 数据诊断（对比本地与云端是否一致）", expanded=False):
-    st.write(f"**价格数据范围**：{weekly_prices.index.min().date()} → {weekly_prices.index.max().date()}，共 {len(weekly_prices)} 周")
-    fct_info = {k: (f"{v.index.min().date()} → {v.index.max().date()}, {len(v)}行" if not v.empty else "⚠️ 缺失") for k, v in factors.items()}
-    st.write("**因子数据**：", fct_info)
-
 
 # ─────────────────────────────────────────────
 # 信号构建（支持自定义基本面权重）
