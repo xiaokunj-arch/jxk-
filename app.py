@@ -264,7 +264,7 @@ with st.sidebar:
     st.header("🛢️ 原油")
     o_dxy = st.slider("美元指数",    -1.0, 1.0,  0.40, 0.05, key="o_dxy")
     o_pmi = st.slider("PMI",         -1.0, 1.0,  0.25, 0.05, key="o_pmi")
-    o_vix = st.slider("VIX（负向）", -1.0, 1.0,  0.35, 0.05, key="o_vix")
+    o_vix = st.slider("VIX恐慌指数", -1.0, 1.0,  0.35, 0.05, key="o_vix")
 
     st.header("🪨 煤炭")
     coal_ttf = st.slider("TTF天然气",  -1.0, 1.0,  0.50, 0.05, key="coal_ttf")
