@@ -25,13 +25,14 @@ import pandas as pd
 WORKBOOK_PATH = Path("大宗商品轮动_数据.xlsx")
 OUTPUT_DIR = Path("model_outputs")
 
-ASSETS = ["黄金", "白银", "铜", "原油"]
+ASSETS = ["黄金", "白银", "铜", "原油", "煤炭"]
 
 PRICE_SHEET_POS = {
     "黄金": (0, 1),
     "白银": (2, 3),
     "铜": (4, 5),
     "原油": (6, 7),
+    "煤炭": (8, 9),
 }
 
 ETF_MAPPING = {
@@ -39,6 +40,7 @@ ETF_MAPPING = {
     "白银": "518890.SH（白银LOF，容量较小）",
     "铜": "铜相关主题ETF（大成有色etf）",
     "原油": "162411.SZ / 501018.SH（原油QDII类）",
+    "煤炭": "煤炭ETF（515220.SH）",
 }
 
 SECTOR_MAP = {
@@ -46,6 +48,7 @@ SECTOR_MAP = {
     "白银": "贵金属",
     "铜": "有色",
     "原油": "能源",
+    "煤炭": "能源",
 }
 
 
@@ -222,6 +225,7 @@ def build_signal_panel(weekly_prices: pd.DataFrame, factors: Dict[str, pd.Series
     fund["白银"] = 0.35 * macro_real + 0.35 * macro_dxy + 0.30 * aligned_change("silver_oi", 4)
     fund["铜"] = 0.25 * macro_real + 0.20 * macro_dxy + 0.30 * macro_pmi - 0.25 * aligned_change("copper_inventory", 4)
     fund["原油"] = 0.15 * macro_real + 0.35 * macro_dxy + 0.20 * macro_pmi - 0.30 * aligned_change("oil_inventory", 4)
+    fund["煤炭"] = 0.20 * macro_dxy + 0.40 * macro_pmi - 0.40 * macro_real
 
     mom_z = zscore_row(mom_raw.reindex(columns=ASSETS).fillna(0.0))
     fund_z = zscore_row(fund.reindex(columns=ASSETS).fillna(0.0))
