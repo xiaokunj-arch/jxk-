@@ -88,10 +88,10 @@ def build_signal_panel_custom(
     macro_dxy = -aligned_change("dxy", 4)
     macro_pmi = aligned_change("pmi", 4)
     gold_oi_chg = aligned_change("gold_oi", 4)
-    copper_inv_chg = aligned_change("copper_inventory", 4)
     macro_ppi = aligned_change("ppi", 4)
     macro_ttf = aligned_change("ttf", 4)
     macro_vix = -aligned_change("vix", 4)
+    macro_fxi = aligned_change("fxi", 4)
 
     gs_ratio = (weekly_prices["黄金"] / weekly_prices["白银"]).replace([np.inf, -np.inf], np.nan)
     gs_ma52 = gs_ratio.rolling(52, min_periods=26).mean()
@@ -110,7 +110,7 @@ def build_signal_panel_custom(
         fw["copper_real_rate"] * macro_real
         + fw["copper_dxy"] * macro_dxy
         + fw["copper_pmi"] * macro_pmi
-        + fw["copper_inventory"] * copper_inv_chg
+        + fw["copper_fxi"] * macro_fxi
     )
     fund["原油"] = (
         fw["oil_dxy"] * macro_dxy
@@ -268,7 +268,7 @@ with st.sidebar:
     c_rr  = st.slider("实际利率",    -1.0, 1.0,  0.25, 0.05, key="c_rr")
     c_dxy = st.slider("美元指数",    -1.0, 1.0,  0.20, 0.05, key="c_dxy")
     c_pmi = st.slider("PMI",         -1.0, 1.0,  0.30, 0.05, key="c_pmi")
-    c_inv = st.slider("LME 铜库存",  -1.0, 1.0, -0.25, 0.05, key="c_inv")
+    c_fxi = st.slider("FXI中国需求", -1.0, 1.0,  0.25, 0.05, key="c_fxi")
 
     st.header("🛢️ 原油")
     o_dxy = st.slider("美元指数",    -1.0, 1.0,  0.40, 0.05, key="o_dxy")
@@ -288,7 +288,7 @@ with st.sidebar:
     for _name, _vals in [
         ("黄金", [g_rr, g_dxy, g_oi]),
         ("白银", [s_rr, s_dxy, s_gs, s_oi]),
-        ("铜",   [c_rr, c_dxy, c_pmi, c_inv]),
+        ("铜",   [c_rr, c_dxy, c_pmi, c_fxi]),
         ("原油", [o_dxy, o_pmi, o_vix]),
         ("煤炭", [coal_ttf, coal_ppi, coal_pmi]),
     ]:
@@ -307,7 +307,7 @@ with st.sidebar:
 fund_weights = {
     "gold_real_rate": g_rr, "gold_dxy": g_dxy, "gold_oi": g_oi,
     "silver_real_rate": s_rr, "silver_dxy": s_dxy, "silver_gs": s_gs, "silver_oi": s_oi,
-    "copper_real_rate": c_rr, "copper_dxy": c_dxy, "copper_pmi": c_pmi, "copper_inventory": c_inv,
+    "copper_real_rate": c_rr, "copper_dxy": c_dxy, "copper_pmi": c_pmi, "copper_fxi": c_fxi,
     "oil_dxy": o_dxy, "oil_pmi": o_pmi, "oil_vix": o_vix,
     "coal_ttf": coal_ttf, "coal_ppi": coal_ppi, "coal_pmi": coal_pmi,
 }

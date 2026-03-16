@@ -165,6 +165,7 @@ def load_weekly_factors(path: Path) -> Dict[str, pd.Series]:
         "ppi": ["美国PPI"],
         "ttf": ["TTF欧洲天然气"],
         "vix": ["VIX恐慌指数"],
+        "fxi": ["FXI中国大盘ETF"],
         "gold_oi": ["comex黄金持仓量"],
         "silver_oi": ["comex白银持仓量"],
         "copper_inventory": ["LME铜库存", "铜库存"],
@@ -226,6 +227,7 @@ def build_signal_panel(weekly_prices: pd.DataFrame, factors: Dict[str, pd.Series
     macro_ppi = aligned_change("ppi", 4)
     macro_ttf = aligned_change("ttf", 4)
     macro_vix = -aligned_change("vix", 4)
+    macro_fxi = aligned_change("fxi", 4)
 
     # 金银比均值回归：高于52周均值说明白银相对黄金偏便宜，对白银是正信号
     gs_ratio = (weekly_prices["黄金"] / weekly_prices["白银"]).replace([np.inf, -np.inf], np.nan)
@@ -235,7 +237,7 @@ def build_signal_panel(weekly_prices: pd.DataFrame, factors: Dict[str, pd.Series
     fund = pd.DataFrame(index=common_idx, columns=ASSETS, dtype=float)
     fund["黄金"] = 0.45 * macro_real + 0.35 * macro_dxy + 0.20 * aligned_change("gold_oi", 4)
     fund["白银"] = 0.25 * macro_real + 0.25 * macro_dxy + 0.35 * macro_gs + 0.15 * aligned_change("silver_oi", 4)
-    fund["铜"] = 0.25 * macro_real + 0.20 * macro_dxy + 0.30 * macro_pmi - 0.25 * aligned_change("copper_inventory", 4)
+    fund["铜"] = 0.25 * macro_real + 0.20 * macro_dxy + 0.30 * macro_pmi + 0.25 * macro_fxi
     fund["原油"] = 0.40 * macro_dxy + 0.25 * macro_pmi + 0.35 * macro_vix
     fund["煤炭"] = 0.50 * macro_ttf + 0.30 * macro_ppi + 0.20 * macro_pmi
 
