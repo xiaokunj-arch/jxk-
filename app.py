@@ -92,7 +92,7 @@ def build_signal_panel_custom(
     copper_inv_chg = aligned_change("copper_inventory", 4)
     oil_inv_chg = aligned_change("oil_inventory", 4)
     macro_ppi = aligned_change("ppi", 4)
-    oil_inv_chg_coal = aligned_change("oil_inventory", 4)
+    macro_ttf = aligned_change("ttf", 4)
 
     fund = pd.DataFrame(index=common_idx, columns=ASSETS, dtype=float)
     fund["黄金"] = fw["gold_real_rate"] * macro_real + fw["gold_dxy"] * macro_dxy + fw["gold_oi"] * gold_oi_chg
@@ -109,9 +109,9 @@ def build_signal_panel_custom(
         + fw["oil_inventory"] * oil_inv_chg
     )
     fund["煤炭"] = (
-        fw["coal_ppi"] * macro_ppi
+        fw["coal_ttf"] * macro_ttf
+        + fw["coal_ppi"] * macro_ppi
         + fw["coal_pmi"] * macro_pmi
-        + fw["coal_oil_inventory"] * oil_inv_chg_coal
     )
 
     mom_z = zscore_row(mom_raw.reindex(columns=ASSETS).fillna(0.0))
@@ -266,9 +266,9 @@ with st.sidebar:
     o_inv = st.slider("原油库存",    -1.0, 1.0, -0.30, 0.05, key="o_inv")
 
     st.header("🪨 煤炭")
-    coal_ppi = st.slider("PPI",       -1.0, 1.0,  0.50, 0.05, key="coal_ppi")
-    coal_pmi = st.slider("PMI",       -1.0, 1.0,  0.30, 0.05, key="coal_pmi")
-    coal_oil_inv = st.slider("原油库存", -1.0, 1.0, -0.20, 0.05, key="coal_oil_inv")
+    coal_ttf = st.slider("TTF天然气",  -1.0, 1.0,  0.50, 0.05, key="coal_ttf")
+    coal_ppi = st.slider("PPI",       -1.0, 1.0,  0.30, 0.05, key="coal_ppi")
+    coal_pmi = st.slider("PMI",       -1.0, 1.0,  0.20, 0.05, key="coal_pmi")
 
     st.divider()
     # ── 权重约束校验 ──
@@ -280,7 +280,7 @@ with st.sidebar:
         ("白银", [s_rr, s_dxy, s_oi]),
         ("铜",   [c_rr, c_dxy, c_pmi, c_inv]),
         ("原油", [o_dxy, o_pmi, o_inv]),
-        ("煤炭", [coal_ppi, coal_pmi, coal_oil_inv]),
+        ("煤炭", [coal_ttf, coal_ppi, coal_pmi]),
     ]:
         _s = sum(abs(v) for v in _vals)
         if _s > 2.0:
@@ -299,7 +299,7 @@ fund_weights = {
     "silver_real_rate": s_rr, "silver_dxy": s_dxy, "silver_oi": s_oi,
     "copper_real_rate": c_rr, "copper_dxy": c_dxy, "copper_pmi": c_pmi, "copper_inventory": c_inv,
     "oil_dxy": o_dxy, "oil_pmi": o_pmi, "oil_inventory": o_inv,
-    "coal_ppi": coal_ppi, "coal_pmi": coal_pmi, "coal_oil_inventory": coal_oil_inv,
+    "coal_ttf": coal_ttf, "coal_ppi": coal_ppi, "coal_pmi": coal_pmi,
 }
 
 # 动量权重归一化，确保三项之和为 1
