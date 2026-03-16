@@ -91,6 +91,7 @@ def build_signal_panel_custom(
     silver_oi_chg = aligned_change("silver_oi", 4)
     copper_inv_chg = aligned_change("copper_inventory", 4)
     oil_inv_chg = aligned_change("oil_inventory", 4)
+    coal_inv_chg = aligned_change("coal_inventory", 4)
 
     fund = pd.DataFrame(index=common_idx, columns=ASSETS, dtype=float)
     fund["黄金"] = fw["gold_real_rate"] * macro_real + fw["gold_dxy"] * macro_dxy + fw["gold_oi"] * gold_oi_chg
@@ -111,6 +112,7 @@ def build_signal_panel_custom(
         fw["coal_dxy"] * macro_dxy
         + fw["coal_pmi"] * macro_pmi
         + fw["coal_real_rate"] * macro_real
+        + fw["coal_inventory"] * coal_inv_chg
     )
 
     mom_z = zscore_row(mom_raw.reindex(columns=ASSETS).fillna(0.0))
@@ -267,8 +269,9 @@ with st.sidebar:
 
     st.header("🪨 煤炭")
     coal_dxy = st.slider("美元指数",  -1.0, 1.0,  0.20, 0.05, key="coal_dxy")
-    coal_pmi = st.slider("PMI",       -1.0, 1.0,  0.40, 0.05, key="coal_pmi")
-    coal_rr  = st.slider("实际利率",  -1.0, 1.0, -0.40, 0.05, key="coal_rr")
+    coal_pmi = st.slider("PMI",       -1.0, 1.0,  0.30, 0.05, key="coal_pmi")
+    coal_rr  = st.slider("实际利率",  -1.0, 1.0, -0.20, 0.05, key="coal_rr")
+    coal_inv = st.slider("煤炭库存",  -1.0, 1.0, -0.30, 0.05, key="coal_inv")
 
     st.divider()
     # ── 权重约束校验 ──
@@ -280,7 +283,7 @@ with st.sidebar:
         ("白银", [s_rr, s_dxy, s_oi]),
         ("铜",   [c_rr, c_dxy, c_pmi, c_inv]),
         ("原油", [o_rr, o_dxy, o_pmi, o_inv]),
-        ("煤炭", [coal_dxy, coal_pmi, coal_rr]),
+        ("煤炭", [coal_dxy, coal_pmi, coal_rr, coal_inv]),
     ]:
         _s = sum(abs(v) for v in _vals)
         if _s > 2.0:
@@ -299,7 +302,7 @@ fund_weights = {
     "silver_real_rate": s_rr, "silver_dxy": s_dxy, "silver_oi": s_oi,
     "copper_real_rate": c_rr, "copper_dxy": c_dxy, "copper_pmi": c_pmi, "copper_inventory": c_inv,
     "oil_real_rate": o_rr, "oil_dxy": o_dxy, "oil_pmi": o_pmi, "oil_inventory": o_inv,
-    "coal_dxy": coal_dxy, "coal_pmi": coal_pmi, "coal_real_rate": coal_rr,
+    "coal_dxy": coal_dxy, "coal_pmi": coal_pmi, "coal_real_rate": coal_rr, "coal_inventory": coal_inv,
 }
 
 # 动量权重归一化，确保三项之和为 1
