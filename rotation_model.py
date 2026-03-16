@@ -164,6 +164,7 @@ def load_weekly_factors(path: Path) -> Dict[str, pd.Series]:
         "pmi": ["美国ISM制造业PMI"],
         "ppi": ["美国PPI"],
         "ttf": ["TTF欧洲天然气"],
+        "vix": ["VIX恐慌指数"],
         "gold_oi": ["comex黄金持仓量"],
         "silver_oi": ["comex白银持仓量"],
         "copper_inventory": ["LME铜库存", "铜库存"],
@@ -224,12 +225,13 @@ def build_signal_panel(weekly_prices: pd.DataFrame, factors: Dict[str, pd.Series
     macro_pmi = aligned_change("pmi", 4)
     macro_ppi = aligned_change("ppi", 4)
     macro_ttf = aligned_change("ttf", 4)
+    macro_vix = -aligned_change("vix", 4)
 
     fund = pd.DataFrame(index=common_idx, columns=ASSETS, dtype=float)
     fund["黄金"] = 0.45 * macro_real + 0.35 * macro_dxy + 0.20 * aligned_change("gold_oi", 4)
     fund["白银"] = 0.35 * macro_real + 0.35 * macro_dxy + 0.30 * aligned_change("silver_oi", 4)
     fund["铜"] = 0.25 * macro_real + 0.20 * macro_dxy + 0.30 * macro_pmi - 0.25 * aligned_change("copper_inventory", 4)
-    fund["原油"] = 0.45 * macro_dxy + 0.25 * macro_pmi - 0.30 * aligned_change("oil_inventory", 4)
+    fund["原油"] = 0.40 * macro_dxy + 0.25 * macro_pmi + 0.35 * macro_vix
     fund["煤炭"] = 0.50 * macro_ttf + 0.30 * macro_ppi + 0.20 * macro_pmi
 
     mom_z = zscore_row(mom_raw.reindex(columns=ASSETS).fillna(0.0))

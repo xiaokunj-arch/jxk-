@@ -93,6 +93,7 @@ def build_signal_panel_custom(
     oil_inv_chg = aligned_change("oil_inventory", 4)
     macro_ppi = aligned_change("ppi", 4)
     macro_ttf = aligned_change("ttf", 4)
+    macro_vix = -aligned_change("vix", 4)
 
     fund = pd.DataFrame(index=common_idx, columns=ASSETS, dtype=float)
     fund["黄金"] = fw["gold_real_rate"] * macro_real + fw["gold_dxy"] * macro_dxy + fw["gold_oi"] * gold_oi_chg
@@ -106,7 +107,7 @@ def build_signal_panel_custom(
     fund["原油"] = (
         fw["oil_dxy"] * macro_dxy
         + fw["oil_pmi"] * macro_pmi
-        + fw["oil_inventory"] * oil_inv_chg
+        + fw["oil_vix"] * macro_vix
     )
     fund["煤炭"] = (
         fw["coal_ttf"] * macro_ttf
@@ -261,9 +262,9 @@ with st.sidebar:
     c_inv = st.slider("LME 铜库存",  -1.0, 1.0, -0.25, 0.05, key="c_inv")
 
     st.header("🛢️ 原油")
-    o_dxy = st.slider("美元指数",    -1.0, 1.0,  0.45, 0.05, key="o_dxy")
+    o_dxy = st.slider("美元指数",    -1.0, 1.0,  0.40, 0.05, key="o_dxy")
     o_pmi = st.slider("PMI",         -1.0, 1.0,  0.25, 0.05, key="o_pmi")
-    o_inv = st.slider("原油库存",    -1.0, 1.0, -0.30, 0.05, key="o_inv")
+    o_vix = st.slider("VIX（负向）", -1.0, 1.0,  0.35, 0.05, key="o_vix")
 
     st.header("🪨 煤炭")
     coal_ttf = st.slider("TTF天然气",  -1.0, 1.0,  0.50, 0.05, key="coal_ttf")
@@ -279,7 +280,7 @@ with st.sidebar:
         ("黄金", [g_rr, g_dxy, g_oi]),
         ("白银", [s_rr, s_dxy, s_oi]),
         ("铜",   [c_rr, c_dxy, c_pmi, c_inv]),
-        ("原油", [o_dxy, o_pmi, o_inv]),
+        ("原油", [o_dxy, o_pmi, o_vix]),
         ("煤炭", [coal_ttf, coal_ppi, coal_pmi]),
     ]:
         _s = sum(abs(v) for v in _vals)
@@ -298,7 +299,7 @@ fund_weights = {
     "gold_real_rate": g_rr, "gold_dxy": g_dxy, "gold_oi": g_oi,
     "silver_real_rate": s_rr, "silver_dxy": s_dxy, "silver_oi": s_oi,
     "copper_real_rate": c_rr, "copper_dxy": c_dxy, "copper_pmi": c_pmi, "copper_inventory": c_inv,
-    "oil_dxy": o_dxy, "oil_pmi": o_pmi, "oil_inventory": o_inv,
+    "oil_dxy": o_dxy, "oil_pmi": o_pmi, "oil_vix": o_vix,
     "coal_ttf": coal_ttf, "coal_ppi": coal_ppi, "coal_pmi": coal_pmi,
 }
 
