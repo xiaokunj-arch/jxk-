@@ -233,7 +233,7 @@ def build_signal_panel(weekly_prices: pd.DataFrame, factors: Dict[str, pd.Series
 
     fund = pd.DataFrame(index=common_idx, columns=ASSETS, dtype=float)
     fund["黄金"] = 0.45 * macro_real + 0.35 * macro_dxy + 0.20 * aligned_change("gold_oi", 4)
-    fund["白银"] = 0.30 * macro_real + 0.30 * macro_dxy + 0.40 * macro_gs
+    fund["白银"] = 0.25 * macro_real + 0.25 * macro_dxy + 0.35 * macro_gs + 0.15 * aligned_change("silver_oi", 4)
     fund["铜"] = 0.25 * macro_real + 0.20 * macro_dxy + 0.30 * macro_pmi - 0.25 * aligned_change("copper_inventory", 4)
     fund["原油"] = 0.40 * macro_dxy + 0.25 * macro_pmi + 0.35 * macro_vix
     fund["煤炭"] = 0.50 * macro_ttf + 0.30 * macro_ppi + 0.20 * macro_pmi
