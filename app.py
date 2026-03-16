@@ -88,16 +88,17 @@ def build_signal_panel_custom(
     macro_dxy = -aligned_change("dxy", 4)
     macro_pmi = aligned_change("pmi", 4)
     gold_oi_chg = aligned_change("gold_oi", 4)
-    silver_oi_chg = aligned_change("silver_oi", 4)
     copper_inv_chg = aligned_change("copper_inventory", 4)
-    oil_inv_chg = aligned_change("oil_inventory", 4)
     macro_ppi = aligned_change("ppi", 4)
     macro_ttf = aligned_change("ttf", 4)
     macro_vix = -aligned_change("vix", 4)
 
+    gs_ratio = (weekly_prices["黄金"] / weekly_prices["白银"]).replace([np.inf, -np.inf], np.nan)
+    macro_gs = -gs_ratio.pct_change(4).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
     fund = pd.DataFrame(index=common_idx, columns=ASSETS, dtype=float)
     fund["黄金"] = fw["gold_real_rate"] * macro_real + fw["gold_dxy"] * macro_dxy + fw["gold_oi"] * gold_oi_chg
-    fund["白银"] = fw["silver_real_rate"] * macro_real + fw["silver_dxy"] * macro_dxy + fw["silver_oi"] * silver_oi_chg
+    fund["白银"] = fw["silver_real_rate"] * macro_real + fw["silver_dxy"] * macro_dxy + fw["silver_gs"] * macro_gs
     fund["铜"] = (
         fw["copper_real_rate"] * macro_real
         + fw["copper_dxy"] * macro_dxy
@@ -251,9 +252,9 @@ with st.sidebar:
     g_oi  = st.slider("COMEX 持仓量", -1.0, 1.0,  0.20, 0.05, key="g_oi")
 
     st.header("🥈 白银")
-    s_rr  = st.slider("实际利率",    -1.0, 1.0,  0.35, 0.05, key="s_rr")
-    s_dxy = st.slider("美元指数",    -1.0, 1.0,  0.35, 0.05, key="s_dxy")
-    s_oi  = st.slider("COMEX 持仓量", -1.0, 1.0,  0.30, 0.05, key="s_oi")
+    s_rr  = st.slider("实际利率",    -1.0, 1.0,  0.30, 0.05, key="s_rr")
+    s_dxy = st.slider("美元指数",    -1.0, 1.0,  0.30, 0.05, key="s_dxy")
+    s_gs  = st.slider("金银比",      -1.0, 1.0,  0.40, 0.05, key="s_gs")
 
     st.header("🔩 铜")
     c_rr  = st.slider("实际利率",    -1.0, 1.0,  0.25, 0.05, key="c_rr")
@@ -278,7 +279,7 @@ with st.sidebar:
         _warns.append(f"动量/基本面权重极端（{mom_weight:.0%} / {1-mom_weight:.0%}），信号可能失衡")
     for _name, _vals in [
         ("黄金", [g_rr, g_dxy, g_oi]),
-        ("白银", [s_rr, s_dxy, s_oi]),
+        ("白银", [s_rr, s_dxy, s_gs]),
         ("铜",   [c_rr, c_dxy, c_pmi, c_inv]),
         ("原油", [o_dxy, o_pmi, o_vix]),
         ("煤炭", [coal_ttf, coal_ppi, coal_pmi]),
@@ -297,7 +298,7 @@ with st.sidebar:
 # ─────────────────────────────────────────────
 fund_weights = {
     "gold_real_rate": g_rr, "gold_dxy": g_dxy, "gold_oi": g_oi,
-    "silver_real_rate": s_rr, "silver_dxy": s_dxy, "silver_oi": s_oi,
+    "silver_real_rate": s_rr, "silver_dxy": s_dxy, "silver_gs": s_gs,
     "copper_real_rate": c_rr, "copper_dxy": c_dxy, "copper_pmi": c_pmi, "copper_inventory": c_inv,
     "oil_dxy": o_dxy, "oil_pmi": o_pmi, "oil_vix": o_vix,
     "coal_ttf": coal_ttf, "coal_ppi": coal_ppi, "coal_pmi": coal_pmi,

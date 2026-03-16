@@ -227,9 +227,13 @@ def build_signal_panel(weekly_prices: pd.DataFrame, factors: Dict[str, pd.Series
     macro_ttf = aligned_change("ttf", 4)
     macro_vix = -aligned_change("vix", 4)
 
+    # 金银比：下降代表白银相对黄金走强，对白银是正信号
+    gs_ratio = (weekly_prices["黄金"] / weekly_prices["白银"]).replace([np.inf, -np.inf], np.nan)
+    macro_gs = -gs_ratio.pct_change(4).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
     fund = pd.DataFrame(index=common_idx, columns=ASSETS, dtype=float)
     fund["黄金"] = 0.45 * macro_real + 0.35 * macro_dxy + 0.20 * aligned_change("gold_oi", 4)
-    fund["白银"] = 0.35 * macro_real + 0.35 * macro_dxy + 0.30 * aligned_change("silver_oi", 4)
+    fund["白银"] = 0.30 * macro_real + 0.30 * macro_dxy + 0.40 * macro_gs
     fund["铜"] = 0.25 * macro_real + 0.20 * macro_dxy + 0.30 * macro_pmi - 0.25 * aligned_change("copper_inventory", 4)
     fund["原油"] = 0.40 * macro_dxy + 0.25 * macro_pmi + 0.35 * macro_vix
     fund["煤炭"] = 0.50 * macro_ttf + 0.30 * macro_ppi + 0.20 * macro_pmi
