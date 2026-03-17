@@ -93,6 +93,7 @@ def build_signal_panel_custom(
     macro_vix = -aligned_change("vix", 4)
     macro_fxi = aligned_change("fxi", 4)
     macro_cn_pmi = aligned_change("cn_pmi", 1)
+    macro_cn_ppi = aligned_change("cn_ppi", 1)
 
     gs_ratio = (weekly_prices["黄金"] / weekly_prices["白银"]).replace([np.inf, -np.inf], np.nan)
     gs_ma52 = gs_ratio.rolling(52, min_periods=26).mean()
@@ -121,6 +122,7 @@ def build_signal_panel_custom(
     fund["煤炭"] = (
         fw["coal_cn_pmi"] * macro_cn_pmi
         + fw["coal_fxi"] * macro_fxi
+        + fw["coal_cn_ppi"] * macro_cn_ppi
     )
 
     mom_z = zscore_row(mom_raw.reindex(columns=ASSETS).fillna(0.0))
@@ -276,8 +278,9 @@ with st.sidebar:
     o_vix = st.slider("VIX恐慌指数", -1.0, 1.0,  0.35, 0.05, key="o_vix")
 
     st.header("🪨 煤炭")
-    coal_cn_pmi = st.slider("中国制造业PMI", -1.0, 1.0,  0.60, 0.05, key="coal_cn_pmi")
-    coal_fxi    = st.slider("FXI中国需求",   -1.0, 1.0,  0.40, 0.05, key="coal_fxi")
+    coal_cn_pmi = st.slider("中国制造业PMI", -1.0, 1.0,  0.40, 0.05, key="coal_cn_pmi")
+    coal_fxi    = st.slider("FXI中国需求",   -1.0, 1.0,  0.30, 0.05, key="coal_fxi")
+    coal_cn_ppi = st.slider("中国PPI",       -1.0, 1.0,  0.30, 0.05, key="coal_cn_ppi")
 
     st.divider()
     # ── 权重约束校验 ──
@@ -289,7 +292,7 @@ with st.sidebar:
         ("白银", [s_rr, s_dxy, s_gs, s_oi]),
         ("铜",   [c_rr, c_dxy, c_pmi, c_fxi]),
         ("原油", [o_dxy, o_pmi, o_vix]),
-        ("煤炭", [coal_cn_pmi, coal_fxi]),
+        ("煤炭", [coal_cn_pmi, coal_fxi, coal_cn_ppi]),
     ]:
         _s = sum(abs(v) for v in _vals)
         if _s > 2.0:
@@ -308,7 +311,7 @@ fund_weights = {
     "silver_real_rate": s_rr, "silver_dxy": s_dxy, "silver_gs": s_gs, "silver_oi": s_oi,
     "copper_real_rate": c_rr, "copper_dxy": c_dxy, "copper_pmi": c_pmi, "copper_fxi": c_fxi,
     "oil_dxy": o_dxy, "oil_pmi": o_pmi, "oil_vix": o_vix,
-    "coal_cn_pmi": coal_cn_pmi, "coal_fxi": coal_fxi,
+    "coal_cn_pmi": coal_cn_pmi, "coal_fxi": coal_fxi, "coal_cn_ppi": coal_cn_ppi,
 }
 
 # 动量权重归一化，确保三项之和为 1
