@@ -309,6 +309,22 @@ with st.sidebar:
 
     run_btn = st.button("▶ 运行回测", type="primary", use_container_width=True)
 
+    st.divider()
+    with st.expander("🔍 数据诊断", expanded=False):
+        import os
+        st.write(f"**数据文件:** `{WORKBOOK_PATH}`")
+        st.write(f"**文件存在:** {WORKBOOK_PATH.exists()}")
+        if WORKBOOK_PATH.exists():
+            st.write(f"**文件大小:** {os.path.getsize(WORKBOOK_PATH):,} bytes")
+        st.write(f"**价格数据:** {len(weekly_prices)} 周，{weekly_prices.index[0].date()} ~ {weekly_prices.index[-1].date()}")
+        st.write(f"**价格列:** {list(weekly_prices.columns)}")
+        st.write("**因子数据行数:**")
+        for k, v in factors.items():
+            if hasattr(v, '__len__') and len(v) > 0:
+                st.write(f"  - `{k}`: {len(v)} 行，{v.index[0].date()} ~ {v.index[-1].date()}")
+            else:
+                st.write(f"  - `{k}`: 空")
+
 # ─────────────────────────────────────────────
 # 收集参数 & 运行
 # ─────────────────────────────────────────────
