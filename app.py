@@ -126,7 +126,10 @@ def build_signal_panel_custom(
     )
 
     mom_z = zscore_row(mom_raw.reindex(columns=ASSETS).fillna(0.0))
-    fund_z = zscore_row(fund.reindex(columns=ASSETS).fillna(0.0))
+    fund_reindexed = fund.reindex(columns=ASSETS)
+    fund_ts_std = fund_reindexed.rolling(52, min_periods=26).std()
+    fund_normalized = fund_reindexed.div(fund_ts_std).fillna(0.0)
+    fund_z = zscore_row(fund_normalized)
     score = cfg.score_momentum_weight * mom_z + cfg.score_fundamental_weight * fund_z
     score = score.where(weekly_ret.notna(), np.nan)
 
