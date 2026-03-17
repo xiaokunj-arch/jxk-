@@ -107,10 +107,13 @@ def _read_two_col_sheet(path: Path, sheet_name: str) -> pd.Series:
 
 
 def _weekly_last(series: pd.Series) -> pd.Series:
-    """统一到周频（周五），并以前值填充缺口以对齐多源数据。"""
+    """统一到周频（周五），并以前值填充缺口以对齐多源数据。
+    截掉周标签 > 今天的不完整周，避免用当周未收盘数据影响信号。
+    """
     if series.empty:
         return series
-    return series.sort_index().resample("W-FRI").last().ffill()
+    today = pd.Timestamp.today().normalize()
+    return series.sort_index().resample("W-FRI").last().ffill().loc[lambda s: s.index <= today]
 
 
 def _parse_mixed_date(value) -> pd.Timestamp | pd.NaT:
