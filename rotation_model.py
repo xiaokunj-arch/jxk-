@@ -22,7 +22,7 @@ import pandas as pd
 # =========================
 # 全局路径与静态配置
 # =========================
-WORKBOOK_PATH = Path("大宗商品轮动_数据.xlsx")
+WORKBOOK_PATH = Path("大宗商品轮动_数据2.xlsx")
 OUTPUT_DIR = Path("model_outputs")
 
 ASSETS = ["黄金", "白银", "铜", "原油", "煤炭"]
