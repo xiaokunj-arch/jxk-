@@ -84,16 +84,20 @@ def build_signal_panel_custom(
         s2 = s.reindex(common_idx).ffill()
         return s2.pct_change(periods).replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
-    macro_real = -aligned_change("real_rate", 4)
-    macro_dxy = -aligned_change("dxy", 4)
+    # 正向因子
     macro_pmi = aligned_change("pmi", 4)
-    gold_oi_chg = aligned_change("gold_oi", 4)
     macro_ppi = aligned_change("ppi", 4)
     macro_ttf = aligned_change("ttf", 4)
-    macro_vix = -aligned_change("vix", 4)
     macro_fxi = aligned_change("fxi", 4)
     macro_cn_pmi = aligned_change("cn_pmi", 4)
     macro_cn_ppi = aligned_change("cn_ppi", 4)
+    # 反向因子：统一取反，正值=看涨信号
+    macro_real          = -aligned_change("real_rate", 4)
+    macro_dxy           = -aligned_change("dxy",       4)
+    macro_vix           = -aligned_change("vix",       4)
+    gold_oi_chg         = -aligned_change("gold_oi",   4)  # 黄金持仓↑→空头增加，承压
+    silver_oi_chg_inv   = -aligned_change("silver_oi", 4)  # 白银持仓↑→空头增加，承压
+    copper_fxi_inv      = -macro_fxi                        # FXI对铜价IC为负（煤炭保留正向）
 
     gs_ratio = (weekly_prices["黄金"] / weekly_prices["白银"]).replace([np.inf, -np.inf], np.nan)
     gs_ma52 = gs_ratio.rolling(52, min_periods=26).mean()
@@ -101,18 +105,17 @@ def build_signal_panel_custom(
 
     fund = pd.DataFrame(index=common_idx, columns=ASSETS, dtype=float)
     fund["黄金"] = fw["gold_real_rate"] * macro_real + fw["gold_dxy"] * macro_dxy + fw["gold_oi"] * gold_oi_chg
-    silver_oi_chg = aligned_change("silver_oi", 4)
     fund["白银"] = (
         fw["silver_real_rate"] * macro_real
         + fw["silver_dxy"] * macro_dxy
         + fw["silver_gs"] * macro_gs
-        + fw["silver_oi"] * silver_oi_chg
+        + fw["silver_oi"] * silver_oi_chg_inv
     )
     fund["铜"] = (
         fw["copper_real_rate"] * macro_real
         + fw["copper_dxy"] * macro_dxy
         + fw["copper_pmi"] * macro_pmi
-        + fw["copper_fxi"] * macro_fxi
+        + fw["copper_fxi"] * copper_fxi_inv
     )
     fund["原油"] = (
         fw["oil_dxy"] * macro_dxy
@@ -267,7 +270,7 @@ with st.sidebar:
     s_rr  = st.slider("实际利率",      -1.0, 1.0,  0.25, 0.05, key="s_rr")
     s_dxy = st.slider("美元指数",      -1.0, 1.0,  0.25, 0.05, key="s_dxy")
     s_gs  = st.slider("金银比",        -1.0, 1.0,  0.35, 0.05, key="s_gs")
-    s_oi  = st.slider("COMEX 持仓量",  -1.0, 1.0, -0.15, 0.05, key="s_oi")
+    s_oi  = st.slider("COMEX 持仓量",  -1.0, 1.0,  0.15, 0.05, key="s_oi")
 
     st.header("🔩 铜")
     c_rr  = st.slider("实际利率",    -1.0, 1.0,  0.25, 0.05, key="c_rr")

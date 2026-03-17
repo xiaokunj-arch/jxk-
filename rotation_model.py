@@ -223,15 +223,20 @@ def build_signal_panel(weekly_prices: pd.DataFrame, factors: Dict[str, pd.Series
         s2 = s.reindex(common_idx).ffill()
         return s2.pct_change(periods).replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
-    macro_real = -aligned_change("real_rate", 4)
-    macro_dxy = -aligned_change("dxy", 4)
+    # 正向因子：上涨→看涨
     macro_pmi = aligned_change("pmi", 4)
     macro_ppi = aligned_change("ppi", 4)
     macro_ttf = aligned_change("ttf", 4)
-    macro_vix = -aligned_change("vix", 4)
     macro_fxi = aligned_change("fxi", 4)
     macro_cn_pmi = aligned_change("cn_pmi", 4)
     macro_cn_ppi = aligned_change("cn_ppi", 4)
+    # 反向因子：上涨→看跌，统一取反使正值=看涨信号
+    macro_real         = -aligned_change("real_rate",  4)  # 实际利率↑→大宗承压
+    macro_dxy          = -aligned_change("dxy",        4)  # 美元↑→大宗承压
+    macro_vix          = -aligned_change("vix",        4)  # VIX↑→风险偏好↓
+    macro_gold_oi_inv  = -aligned_change("gold_oi",    4)  # 黄金持仓↑→空头增加，承压
+    macro_silver_oi_inv= -aligned_change("silver_oi",  4)  # 白银持仓↑→空头增加，承压
+    macro_copper_fxi_inv = -macro_fxi                       # FXI对铜价IC为负（煤炭保留正向）
 
     # 金银比均值回归：高于52周均值说明白银相对黄金偏便宜，对白银是正信号
     gs_ratio = (weekly_prices["黄金"] / weekly_prices["白银"]).replace([np.inf, -np.inf], np.nan)
@@ -239,9 +244,9 @@ def build_signal_panel(weekly_prices: pd.DataFrame, factors: Dict[str, pd.Series
     macro_gs = (gs_ratio / gs_ma52 - 1).replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
     fund = pd.DataFrame(index=common_idx, columns=ASSETS, dtype=float)
-    fund["黄金"] = 0.45 * macro_real + 0.35 * macro_dxy + 0.20 * aligned_change("gold_oi", 4)
-    fund["白银"] = 0.25 * macro_real + 0.25 * macro_dxy + 0.35 * macro_gs - 0.15 * aligned_change("silver_oi", 4)
-    fund["铜"] = 0.25 * macro_real + 0.20 * macro_dxy + 0.30 * macro_pmi + 0.25 * macro_fxi
+    fund["黄金"] = 0.45 * macro_real + 0.35 * macro_dxy + 0.20 * macro_gold_oi_inv
+    fund["白银"] = 0.25 * macro_real + 0.25 * macro_dxy + 0.35 * macro_gs + 0.15 * macro_silver_oi_inv
+    fund["铜"] = 0.25 * macro_real + 0.20 * macro_dxy + 0.30 * macro_pmi + 0.25 * macro_copper_fxi_inv
     fund["原油"] = 0.40 * macro_dxy + 0.25 * macro_pmi + 0.35 * macro_vix
     fund["煤炭"] = 0.40 * macro_cn_pmi + 0.30 * macro_fxi + 0.30 * macro_cn_ppi
 
