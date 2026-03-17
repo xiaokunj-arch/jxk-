@@ -92,8 +92,8 @@ def build_signal_panel_custom(
     macro_ttf = aligned_change("ttf", 4)
     macro_vix = -aligned_change("vix", 4)
     macro_fxi = aligned_change("fxi", 4)
-    macro_cn_pmi = aligned_change("cn_pmi", 1)
-    macro_cn_ppi = aligned_change("cn_ppi", 1)
+    macro_cn_pmi = aligned_change("cn_pmi", 4)
+    macro_cn_ppi = aligned_change("cn_ppi", 4)
 
     gs_ratio = (weekly_prices["黄金"] / weekly_prices["白银"]).replace([np.inf, -np.inf], np.nan)
     gs_ma52 = gs_ratio.rolling(52, min_periods=26).mean()
@@ -267,7 +267,7 @@ with st.sidebar:
     s_rr  = st.slider("实际利率",      -1.0, 1.0,  0.25, 0.05, key="s_rr")
     s_dxy = st.slider("美元指数",      -1.0, 1.0,  0.25, 0.05, key="s_dxy")
     s_gs  = st.slider("金银比",        -1.0, 1.0,  0.35, 0.05, key="s_gs")
-    s_oi  = st.slider("COMEX 持仓量",  -1.0, 1.0,  0.15, 0.05, key="s_oi")
+    s_oi  = st.slider("COMEX 持仓量",  -1.0, 1.0, -0.15, 0.05, key="s_oi")
 
     st.header("🔩 铜")
     c_rr  = st.slider("实际利率",    -1.0, 1.0,  0.25, 0.05, key="c_rr")
