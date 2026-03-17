@@ -241,7 +241,7 @@ def build_signal_panel(weekly_prices: pd.DataFrame, factors: Dict[str, pd.Series
     fund["白银"] = 0.25 * macro_real + 0.25 * macro_dxy + 0.35 * macro_gs + 0.15 * aligned_change("silver_oi", 4)
     fund["铜"] = 0.25 * macro_real + 0.20 * macro_dxy + 0.30 * macro_pmi + 0.25 * macro_fxi
     fund["原油"] = 0.40 * macro_dxy + 0.25 * macro_pmi + 0.35 * macro_vix
-    fund["煤炭"] = 0.50 * macro_cn_pmi + 0.30 * macro_fxi + 0.20 * -aligned_change("coal_inventory", 4)
+    fund["煤炭"] = 0.60 * macro_cn_pmi + 0.40 * macro_fxi
 
     mom_z = zscore_row(mom_raw.reindex(columns=ASSETS).fillna(0.0))
     fund_z = zscore_row(fund.reindex(columns=ASSETS).fillna(0.0))
