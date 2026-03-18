@@ -73,8 +73,9 @@ class BacktestConfig:
     mom_w_long: float = 0.25    # 长期动量（52周）权重
     use_ivw: bool = False        # 是否启用反波动率加权
     ivw_weeks: int = 12          # 反波动率加权的波动率回溯周数
-    cash_threshold: float = -99.0  # 单品种得分低于此值时排除（-99=禁用）
-    top_n_free: int = 5            # 无约束模式下最多持仓品种数
+    cash_threshold: float = -99.0         # 单品种得分低于此值时排除（-99=禁用）
+    market_cash_threshold: float = -99.0  # 等权动量低于此值时全仓空仓（-99=禁用）
+    top_n_free: int = 5                   # 无约束模式下最多持仓品种数
 
 
 def parse_args() -> argparse.Namespace:
@@ -347,9 +348,11 @@ def run_backtest(signal_panel: pd.DataFrame, cfg: BacktestConfig) -> Tuple[pd.Da
     score = signal_panel["score"].copy()
     rets = signal_panel["weekly_ret"].copy()
     vol = signal_panel["vol_12w"].copy()
+    ew_mom = signal_panel["mom_raw"].mean(axis=1)  # 等权动量，用于大势空仓
     score = score[score.index >= pd.Timestamp(cfg.start_date)]
     rets = rets.reindex(score.index)
     vol = vol.reindex(score.index)
+    ew_mom = ew_mom.reindex(score.index).fillna(0.0)
 
     weight_rows = []
     strat_rets = []
@@ -357,7 +360,11 @@ def run_backtest(signal_panel: pd.DataFrame, cfg: BacktestConfig) -> Tuple[pd.Da
 
     for i, dt in enumerate(score.index):
         sc = score.loc[dt]
-        if cfg.no_constraints:
+        # 大势空仓：等权动量低于阈值时全仓空仓
+        if cfg.market_cash_threshold > -90 and ew_mom.loc[dt] < cfg.market_cash_threshold:
+            target = pd.Series(0.0, index=ASSETS)
+            chosen = []
+        elif cfg.no_constraints:
             target = _score_to_free_weights(sc, min_score=cfg.cash_threshold, top_n=cfg.top_n_free)
             chosen = [a for a in ASSETS if target[a] > 1e-10]
         else:
