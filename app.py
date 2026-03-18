@@ -151,7 +151,7 @@ def build_signal_panel_custom(
     )
 
 
-def run_model(prices, facts, fw, cost_bps, mom_w, mom_lb, mom_weights, use_ivw=False, ivw_weeks=12, cash_threshold=-99.0, top_n_free=5):
+def run_model(prices, facts, fw, cost_bps, mom_w, mom_lb, mom_weights, use_ivw=False, ivw_weeks=12, cash_threshold=-99.0, top_n_free=5, market_cash_threshold=-99.0):
     cfg = BacktestConfig(
         cost_bps=cost_bps,
         momentum_lookback_weeks=mom_lb,
@@ -165,6 +165,7 @@ def run_model(prices, facts, fw, cost_bps, mom_w, mom_lb, mom_weights, use_ivw=F
         ivw_weeks=ivw_weeks,
         cash_threshold=cash_threshold,
         top_n_free=top_n_free,
+        market_cash_threshold=market_cash_threshold,
     )
     cfg.max_weight_per_asset = 1.0
     cfg.max_weight_per_sector = 1.0
@@ -244,6 +245,11 @@ with st.sidebar:
     st.header("⚙️ 全局参数")
     cost_bps = st.slider("交易成本 (bps)", 0.0, 50.0, 0.0, 1.0)
     use_ivw = st.checkbox("反波动率加权", value=False, help="勾选后按各资产波动率倒数调整权重，波动小的资产多配，有助于降低回撤")
+    use_market_cash = st.checkbox("启用大势空仓", value=False, help="等权组合动量低于阈值时全仓空仓，规避趋势性下跌")
+    market_cash_threshold = -99.0
+    if use_market_cash:
+        market_cash_threshold = st.slider("大势空仓阈值（等权动量）", -0.15, 0.05, 0.0, 0.01,
+                                          help="5个品种等权平均动量低于此值时全部空仓。0=均值为负时空仓")
     use_cash = st.checkbox("启用低分过滤", value=False, help="单品种综合得分低于阈值时不配置；高于阈值的品种全部配置；全部低于阈值时完全空仓")
     cash_threshold = -99.0
     top_n_free = 5
@@ -355,7 +361,7 @@ if "result" not in st.session_state or run_btn:
     with st.spinner("回测计算中..."):
         weights, strategy_ret, nav = run_model(
             weekly_prices, factors, fund_weights, cost_bps, mom_weight, mom_lookback, mom_weights,
-            use_ivw, ivw_weeks if use_ivw else 12, cash_threshold, top_n_free
+            use_ivw, ivw_weeks if use_ivw else 12, cash_threshold, top_n_free, market_cash_threshold
         )
     st.session_state.result = (weights, strategy_ret, nav)
 
