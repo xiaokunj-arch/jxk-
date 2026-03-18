@@ -243,13 +243,13 @@ def build_excel(weights: pd.DataFrame, strategy_ret: pd.Series, nav: pd.Series, 
 with st.sidebar:
     st.header("⚙️ 全局参数")
     cost_bps = st.slider("交易成本 (bps)", 0.0, 50.0, 0.0, 1.0)
-    top_n_free = st.slider("最多持仓品种数", 1, 5, 3, 1, help="每周只持有评分最高的前 N 个品种，其余归零")
     use_ivw = st.checkbox("反波动率加权", value=False, help="勾选后按各资产波动率倒数调整权重，波动小的资产多配，有助于降低回撤")
-    use_cash = st.checkbox("启用低分空仓", value=False, help="单品种综合得分低于阈值时不配置该品种；全部低于阈值时完全空仓")
+    use_cash = st.checkbox("启用低分过滤", value=False, help="单品种综合得分低于阈值时不配置；高于阈值的品种全部配置；全部低于阈值时完全空仓")
     cash_threshold = -99.0
+    top_n_free = 5
     if use_cash:
         cash_threshold = st.slider("最低持仓分数（z-score）", -2.0, 0.5, -0.5, 0.1,
-                                   help="低于此分数的品种直接排除。-0.5=排除明显弱势品种；0=只持有高于均值的品种")
+                                   help="低于此分数的品种直接排除；高于的品种全部配置（softmax加权）")
     if use_ivw:
         ivw_weeks = st.slider("波动率回溯周数", 4, 52, 12, 1, help="计算反波动率加权所用的滚动波动率窗口")
     mom_weight = st.slider("动量权重", 0.0, 1.0, 0.6, 0.05,
