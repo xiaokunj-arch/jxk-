@@ -299,14 +299,15 @@ def _select_top_assets(score_row: pd.Series, cfg: BacktestConfig) -> List[str]:
     return chosen
 
 
-def _score_to_free_weights(score_row: pd.Series) -> pd.Series:
+def _score_to_free_weights(score_row: pd.Series, min_score: float = -99.0) -> pd.Series:
     """
     无约束模式下的权重生成：
-    - 不限制持仓数量（全部可交易品种都可配置）
-    - 不限制单品种配比上限
     - 用 softmax 将评分映射成非负且总和为1的权重
+    - min_score: 低于此分数的资产直接排除（不配置）
     """
     valid = score_row.dropna()
+    if min_score > -90:
+        valid = valid[valid >= min_score]
     if valid.empty:
         return pd.Series(0.0, index=ASSETS)
     x = (valid - valid.max()).astype(float)
@@ -343,12 +344,9 @@ def run_backtest(signal_panel: pd.DataFrame, cfg: BacktestConfig) -> Tuple[pd.Da
     score = signal_panel["score"].copy()
     rets = signal_panel["weekly_ret"].copy()
     vol = signal_panel["vol_12w"].copy()
-    # 最优资产动量（最高的那个），用于大势空仓判断
-    best_mom = signal_panel["mom_raw"].max(axis=1)
     score = score[score.index >= pd.Timestamp(cfg.start_date)]
     rets = rets.reindex(score.index)
     vol = vol.reindex(score.index)
-    best_mom = best_mom.reindex(score.index).fillna(0.0)
 
     weight_rows = []
     strat_rets = []
@@ -357,7 +355,7 @@ def run_backtest(signal_panel: pd.DataFrame, cfg: BacktestConfig) -> Tuple[pd.Da
     for i, dt in enumerate(score.index):
         sc = score.loc[dt]
         if cfg.no_constraints:
-            target = _score_to_free_weights(sc)
+            target = _score_to_free_weights(sc, min_score=cfg.cash_threshold)
             chosen = [a for a in ASSETS if target[a] > 1e-10]
         else:
             chosen = _select_top_assets(sc, cfg)
@@ -367,10 +365,6 @@ def run_backtest(signal_panel: pd.DataFrame, cfg: BacktestConfig) -> Tuple[pd.Da
                 for c in chosen:
                     target[c] = min(eq_w, cfg.max_weight_per_asset)
             target = _cap_turnover(target, prev_w, cfg.max_turnover)
-
-        # 大势空仓：即使最优资产动量也低于阈值时清空仓位
-        if cfg.cash_threshold > -90 and best_mom.loc[dt] < cfg.cash_threshold:
-            target = pd.Series(0.0, index=ASSETS)
 
         # 反波动率加权：将目标权重乘以各资产波动率倒数再归一化
         if cfg.use_ivw:
