@@ -248,8 +248,8 @@ with st.sidebar:
     use_market_cash = st.checkbox("启用空仓", value=False, help="等权组合动量低于阈值时全仓空仓，规避趋势性下跌")
     market_cash_threshold = -99.0
     if use_market_cash:
-        market_cash_threshold = st.slider("大势空仓阈值（等权动量）", -0.15, 0.05, 0.0, 0.01,
-                                          help="5个品种等权平均动量低于此值时全部空仓。0=均值为负时空仓")
+        market_cash_threshold = st.slider("空仓阈值", -0.15, 0.05, 0.0, 0.01,
+                                          help="将5个品种的动量得分等权平均，得到整体市场动量。低于此阈值时全部空仓，不持任何品种。建议设0（动量为负即空仓）")
     use_cash = st.checkbox("启用低分过滤", value=False, help="单品种综合得分低于阈值时不配置；高于阈值的品种全部配置；全部低于阈值时完全空仓")
     cash_threshold = -99.0
     top_n_free = 5
