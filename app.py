@@ -246,8 +246,8 @@ with st.sidebar:
     use_cash = st.checkbox("启用大势空仓", value=False, help="等权组合动量低于阈值时全部空仓，规避趋势性下跌")
     cash_threshold = -99.0
     if use_cash:
-        cash_threshold = st.slider("空仓阈值（等权动量）", -0.20, 0.10, 0.0, 0.01,
-                                   help="等权组合12周动量低于此值时空仓。0=所有品种平均动量为负时空仓")
+        cash_threshold = st.slider("空仓阈值（最优品种动量）", -0.20, 0.10, 0.0, 0.01,
+                                   help="5个品种里动量最高的那个仍低于此值时全部空仓。0=最强品种动量也为负时空仓")
     if use_ivw:
         ivw_weeks = st.slider("波动率回溯周数", 4, 52, 12, 1, help="计算反波动率加权所用的滚动波动率窗口")
     mom_weight = st.slider("动量权重", 0.0, 1.0, 0.6, 0.05,
