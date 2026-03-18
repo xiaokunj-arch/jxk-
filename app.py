@@ -391,11 +391,11 @@ def delta(strat, bm, pct=False):
     diff = strat - bm
     return f"{diff:+.1%}" if pct else f"{diff:+.2f}"
 
-m1.metric("年化收益", fmt(perf["ann_return"], pct=True), delta(perf["ann_return"], perf_bm["ann_return"], pct=True))
-m2.metric("年化波动", fmt(perf["ann_vol"],    pct=True), delta(perf["ann_vol"],    perf_bm["ann_vol"],    pct=True))
-m3.metric("Sharpe",   fmt(perf["sharpe"]),               delta(perf["sharpe"],     perf_bm["sharpe"]))
-m4.metric("最大回撤", fmt(perf["max_drawdown"], pct=True), delta(perf["max_drawdown"], perf_bm["max_drawdown"], pct=True))
-m5.metric("胜率",     fmt(perf["win_rate"],    pct=True), delta(perf["win_rate"],   perf_bm["win_rate"],   pct=True))
+m1.metric("年化收益", fmt(perf["ann_return"], pct=True), delta(perf["ann_return"], perf_bm["ann_return"], pct=True), delta_color="inverse")
+m2.metric("年化波动", fmt(perf["ann_vol"],    pct=True), delta(perf["ann_vol"],    perf_bm["ann_vol"],    pct=True), delta_color="normal")
+m3.metric("Sharpe",   fmt(perf["sharpe"]),               delta(perf["sharpe"],     perf_bm["sharpe"]),               delta_color="inverse")
+m4.metric("最大回撤", fmt(perf["max_drawdown"], pct=True), delta(perf["max_drawdown"], perf_bm["max_drawdown"], pct=True), delta_color="inverse")
+m5.metric("胜率",     fmt(perf["win_rate"],    pct=True), delta(perf["win_rate"],   perf_bm["win_rate"],   pct=True), delta_color="inverse")
 st.caption(f"↑↓ vs 持有黄金基准（年化收益 {fmt(perf_bm['ann_return'], pct=True)}，Sharpe {fmt(perf_bm['sharpe'])}，最大回撤 {fmt(perf_bm['max_drawdown'], pct=True)}）")
 
 # ─────────────────────────────────────────────
