@@ -179,8 +179,8 @@ def run_model(prices, facts, fw, cost_bps, mom_w, mom_lb, mom_weights, use_ivw=F
 # ─────────────────────────────────────────────
 # 导出 Excel
 # ─────────────────────────────────────────────
-def build_excel(weights: pd.DataFrame, strategy_ret: pd.Series, nav: pd.Series, weeks: int) -> bytes:
-    r = strategy_ret.dropna().tail(weeks)
+def build_excel(weights: pd.DataFrame, strategy_ret: pd.Series, nav: pd.Series, weeks: int | None) -> bytes:
+    r = strategy_ret.dropna() if weeks is None else strategy_ret.dropna().tail(weeks)
     if r.empty:
         raise ValueError("收益序列为空。")
     start, end = r.index[0], r.index[-1]
@@ -465,8 +465,8 @@ with col_exp:
     st.subheader("导出 Excel 报告")
     weeks_opt = st.selectbox(
         "导出窗口",
-        [52, 26, 104],
-        format_func=lambda x: f"近 {x} 周（约 {x//52} 年）" if x >= 52 else f"近 {x} 周",
+        [None, 52, 104, 26],
+        format_func=lambda x: "全部（从开始到现在）" if x is None else (f"近 {x} 周（约 {x//52} 年）" if x >= 52 else f"近 {x} 周"),
     )
     try:
         excel_bytes = build_excel(weights, strategy_ret, nav, weeks=weeks_opt)
