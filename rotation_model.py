@@ -73,6 +73,7 @@ class BacktestConfig:
     mom_w_long: float = 0.25    # 长期动量（52周）权重
     use_ivw: bool = False        # 是否启用反波动率加权
     ivw_weeks: int = 12          # 反波动率加权的波动率回溯周数
+    cash_threshold: float = -99.0  # 等权动量低于此值时全仓空仓（-99=禁用）
 
 
 def parse_args() -> argparse.Namespace:
@@ -342,9 +343,12 @@ def run_backtest(signal_panel: pd.DataFrame, cfg: BacktestConfig) -> Tuple[pd.Da
     score = signal_panel["score"].copy()
     rets = signal_panel["weekly_ret"].copy()
     vol = signal_panel["vol_12w"].copy()
+    # 等权组合动量，用于大势空仓判断
+    ew_mom = signal_panel["mom_raw"].mean(axis=1)
     score = score[score.index >= pd.Timestamp(cfg.start_date)]
     rets = rets.reindex(score.index)
     vol = vol.reindex(score.index)
+    ew_mom = ew_mom.reindex(score.index).fillna(0.0)
 
     weight_rows = []
     strat_rets = []
@@ -363,6 +367,10 @@ def run_backtest(signal_panel: pd.DataFrame, cfg: BacktestConfig) -> Tuple[pd.Da
                 for c in chosen:
                     target[c] = min(eq_w, cfg.max_weight_per_asset)
             target = _cap_turnover(target, prev_w, cfg.max_turnover)
+
+        # 大势空仓：等权动量低于阈值时清空仓位
+        if cfg.cash_threshold > -90 and ew_mom.loc[dt] < cfg.cash_threshold:
+            target = pd.Series(0.0, index=ASSETS)
 
         # 反波动率加权：将目标权重乘以各资产波动率倒数再归一化
         if cfg.use_ivw:

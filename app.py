@@ -151,7 +151,7 @@ def build_signal_panel_custom(
     )
 
 
-def run_model(prices, facts, fw, cost_bps, mom_w, mom_lb, mom_weights, use_ivw=False, ivw_weeks=12):
+def run_model(prices, facts, fw, cost_bps, mom_w, mom_lb, mom_weights, use_ivw=False, ivw_weeks=12, cash_threshold=-99.0):
     cfg = BacktestConfig(
         cost_bps=cost_bps,
         momentum_lookback_weeks=mom_lb,
@@ -163,6 +163,7 @@ def run_model(prices, facts, fw, cost_bps, mom_w, mom_lb, mom_weights, use_ivw=F
         mom_w_long=mom_weights["w_long"],
         use_ivw=use_ivw,
         ivw_weeks=ivw_weeks,
+        cash_threshold=cash_threshold,
     )
     cfg.max_weight_per_asset = 1.0
     cfg.max_weight_per_sector = 1.0
@@ -242,6 +243,11 @@ with st.sidebar:
     st.header("⚙️ 全局参数")
     cost_bps = st.slider("交易成本 (bps)", 0.0, 50.0, 0.0, 1.0)
     use_ivw = st.checkbox("反波动率加权", value=False, help="勾选后按各资产波动率倒数调整权重，波动小的资产多配，有助于降低回撤")
+    use_cash = st.checkbox("启用大势空仓", value=False, help="等权组合动量低于阈值时全部空仓，规避趋势性下跌")
+    cash_threshold = -99.0
+    if use_cash:
+        cash_threshold = st.slider("空仓阈值（等权动量）", -0.20, 0.10, 0.0, 0.01,
+                                   help="等权组合12周动量低于此值时空仓。0=所有品种平均动量为负时空仓")
     if use_ivw:
         ivw_weeks = st.slider("波动率回溯周数", 4, 52, 12, 1, help="计算反波动率加权所用的滚动波动率窗口")
     mom_weight = st.slider("动量权重", 0.0, 1.0, 0.6, 0.05,
@@ -347,7 +353,7 @@ if "result" not in st.session_state or run_btn:
     with st.spinner("回测计算中..."):
         weights, strategy_ret, nav = run_model(
             weekly_prices, factors, fund_weights, cost_bps, mom_weight, mom_lookback, mom_weights,
-            use_ivw, ivw_weeks if use_ivw else 12
+            use_ivw, ivw_weeks if use_ivw else 12, cash_threshold
         )
     st.session_state.result = (weights, strategy_ret, nav)
 
