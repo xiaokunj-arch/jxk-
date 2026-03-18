@@ -245,7 +245,7 @@ with st.sidebar:
     st.header("⚙️ 全局参数")
     cost_bps = st.slider("交易成本 (bps)", 0.0, 50.0, 0.0, 1.0)
     use_ivw = st.checkbox("反波动率加权", value=False, help="勾选后按各资产波动率倒数调整权重，波动小的资产多配，有助于降低回撤")
-    use_market_cash = st.checkbox("启用大势空仓", value=False, help="等权组合动量低于阈值时全仓空仓，规避趋势性下跌")
+    use_market_cash = st.checkbox("启用空仓", value=False, help="等权组合动量低于阈值时全仓空仓，规避趋势性下跌")
     market_cash_threshold = -99.0
     if use_market_cash:
         market_cash_threshold = st.slider("大势空仓阈值（等权动量）", -0.15, 0.05, 0.0, 0.01,
