@@ -73,7 +73,8 @@ class BacktestConfig:
     mom_w_long: float = 0.25    # 长期动量（52周）权重
     use_ivw: bool = False        # 是否启用反波动率加权
     ivw_weeks: int = 12          # 反波动率加权的波动率回溯周数
-    cash_threshold: float = -99.0  # 最优资产动量低于此值时全仓空仓（-99=禁用）
+    cash_threshold: float = -99.0  # 单品种得分低于此值时排除（-99=禁用）
+    top_n_free: int = 5            # 无约束模式下最多持仓品种数
 
 
 def parse_args() -> argparse.Namespace:
@@ -299,17 +300,19 @@ def _select_top_assets(score_row: pd.Series, cfg: BacktestConfig) -> List[str]:
     return chosen
 
 
-def _score_to_free_weights(score_row: pd.Series, min_score: float = -99.0) -> pd.Series:
+def _score_to_free_weights(score_row: pd.Series, min_score: float = -99.0, top_n: int = 5) -> pd.Series:
     """
     无约束模式下的权重生成：
-    - 用 softmax 将评分映射成非负且总和为1的权重
-    - min_score: 低于此分数的资产直接排除（不配置）
+    - min_score: 低于此分数的资产直接排除
+    - top_n: 只保留评分最高的前 N 个资产，再做 softmax
     """
     valid = score_row.dropna()
     if min_score > -90:
         valid = valid[valid >= min_score]
     if valid.empty:
         return pd.Series(0.0, index=ASSETS)
+    if top_n < len(valid):
+        valid = valid.nlargest(top_n)
     x = (valid - valid.max()).astype(float)
     ex = np.exp(x)
     w = ex / ex.sum()
@@ -355,7 +358,7 @@ def run_backtest(signal_panel: pd.DataFrame, cfg: BacktestConfig) -> Tuple[pd.Da
     for i, dt in enumerate(score.index):
         sc = score.loc[dt]
         if cfg.no_constraints:
-            target = _score_to_free_weights(sc, min_score=cfg.cash_threshold)
+            target = _score_to_free_weights(sc, min_score=cfg.cash_threshold, top_n=cfg.top_n_free)
             chosen = [a for a in ASSETS if target[a] > 1e-10]
         else:
             chosen = _select_top_assets(sc, cfg)

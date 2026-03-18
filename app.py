@@ -151,7 +151,7 @@ def build_signal_panel_custom(
     )
 
 
-def run_model(prices, facts, fw, cost_bps, mom_w, mom_lb, mom_weights, use_ivw=False, ivw_weeks=12, cash_threshold=-99.0):
+def run_model(prices, facts, fw, cost_bps, mom_w, mom_lb, mom_weights, use_ivw=False, ivw_weeks=12, cash_threshold=-99.0, top_n_free=5):
     cfg = BacktestConfig(
         cost_bps=cost_bps,
         momentum_lookback_weeks=mom_lb,
@@ -164,6 +164,7 @@ def run_model(prices, facts, fw, cost_bps, mom_w, mom_lb, mom_weights, use_ivw=F
         use_ivw=use_ivw,
         ivw_weeks=ivw_weeks,
         cash_threshold=cash_threshold,
+        top_n_free=top_n_free,
     )
     cfg.max_weight_per_asset = 1.0
     cfg.max_weight_per_sector = 1.0
@@ -242,6 +243,7 @@ def build_excel(weights: pd.DataFrame, strategy_ret: pd.Series, nav: pd.Series, 
 with st.sidebar:
     st.header("⚙️ 全局参数")
     cost_bps = st.slider("交易成本 (bps)", 0.0, 50.0, 0.0, 1.0)
+    top_n_free = st.slider("最多持仓品种数", 1, 5, 3, 1, help="每周只持有评分最高的前 N 个品种，其余归零")
     use_ivw = st.checkbox("反波动率加权", value=False, help="勾选后按各资产波动率倒数调整权重，波动小的资产多配，有助于降低回撤")
     use_cash = st.checkbox("启用低分空仓", value=False, help="单品种综合得分低于阈值时不配置该品种；全部低于阈值时完全空仓")
     cash_threshold = -99.0
@@ -353,7 +355,7 @@ if "result" not in st.session_state or run_btn:
     with st.spinner("回测计算中..."):
         weights, strategy_ret, nav = run_model(
             weekly_prices, factors, fund_weights, cost_bps, mom_weight, mom_lookback, mom_weights,
-            use_ivw, ivw_weeks if use_ivw else 12, cash_threshold
+            use_ivw, ivw_weeks if use_ivw else 12, cash_threshold, top_n_free
         )
     st.session_state.result = (weights, strategy_ret, nav)
 
