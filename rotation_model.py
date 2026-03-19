@@ -74,7 +74,9 @@ class BacktestConfig:
     use_ivw: bool = False        # 是否启用反波动率加权
     ivw_weeks: int = 12          # 反波动率加权的波动率回溯周数
     cash_threshold: float = -99.0         # 单品种得分低于此值时排除（-99=禁用）
-    market_cash_threshold: float = -99.0  # 等权动量低于此值时全仓空仓（-99=禁用）
+    market_cash_threshold: float = -99.0  # 等权动量低于此值时仓位为0%（-99=禁用）
+    market_full_threshold: float = -99.0  # 等权动量高于此值时仓位为100%；两值之间线性插值
+    max_position_ratio: float = 1.0       # 整体仓位上限（0~1），剩余部分为现金
     top_n_free: int = 5                   # 无约束模式下最多持仓品种数
 
 
@@ -360,8 +362,21 @@ def run_backtest(signal_panel: pd.DataFrame, cfg: BacktestConfig) -> Tuple[pd.Da
 
     for i, dt in enumerate(score.index):
         sc = score.loc[dt]
-        # 大势空仓：等权动量低于阈值时全仓空仓
-        if cfg.market_cash_threshold > -90 and ew_mom.loc[dt] < cfg.market_cash_threshold:
+
+        # 计算仓位比例：基于等权动量平滑过渡（空仓线~满仓线之间线性插值）
+        if cfg.market_cash_threshold > -90:
+            mom_val = float(ew_mom.loc[dt])
+            if mom_val <= cfg.market_cash_threshold:
+                pos_ratio = 0.0
+            elif cfg.market_full_threshold > cfg.market_cash_threshold and mom_val < cfg.market_full_threshold:
+                pos_ratio = (mom_val - cfg.market_cash_threshold) / (cfg.market_full_threshold - cfg.market_cash_threshold)
+            else:
+                pos_ratio = 1.0
+        else:
+            pos_ratio = 1.0
+        pos_ratio = min(pos_ratio, cfg.max_position_ratio)
+
+        if pos_ratio == 0.0:
             target = pd.Series(0.0, index=ASSETS)
             chosen = []
         elif cfg.no_constraints:
@@ -384,6 +399,9 @@ def run_backtest(signal_panel: pd.DataFrame, cfg: BacktestConfig) -> Tuple[pd.Da
             total_inv = inv_vol.sum()
             if total_inv > 0:
                 target = inv_vol / total_inv
+        # 应用仓位比例（半仓逻辑）：target权重之和 = pos_ratio，其余为现金
+        if pos_ratio < 1.0:
+            target = target * pos_ratio
         turnover = float((target - prev_w).abs().sum())
         trade_cost = turnover * cfg.cost_bps / 10000.0
 
