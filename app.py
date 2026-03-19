@@ -256,7 +256,7 @@ with st.sidebar:
         market_full_threshold = st.slider("满仓线（等权动量高于此值→100%仓位）", -0.10, 0.10, 0.0, 0.01,
                                           help="5品种等权平均动量高于此值时按模型满仓；两线之间按比例持仓（半仓过渡）")
     max_position_ratio = st.slider("整体仓位上限", 0.1, 1.0, 1.0, 0.05,
-                                   help="模型最多投入的总仓位比例，剩余为现金。例如设0.5则模型最多半仓，无论动量如何")
+                                   help="模型最多投入的总仓位比例。例如设0.5则模型最多半仓，无论动量如何")
     use_cash = st.checkbox("启用低分过滤", value=False, help="单品种综合得分低于阈值时不配置；高于阈值的品种全部配置；全部低于阈值时完全空仓")
     cash_threshold = -99.0
     top_n_free = 5
