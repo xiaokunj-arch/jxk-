@@ -21,6 +21,7 @@ from rotation_model import (
     WORKBOOK_PATH,
     BacktestConfig,
     build_etf_weights,
+    build_ml_fund_scores,
     calc_perf,
     load_weekly_factors,
     load_weekly_prices,
@@ -50,6 +51,11 @@ def load_data():
     return prices, factors
 
 
+@st.cache_data(show_spinner="ML学习基本面因子权重（首次运行约1分钟）...")
+def compute_ml_fund(_prices, _factors, min_train_weeks=104):
+    return build_ml_fund_scores(_prices, _factors, min_train_weeks)
+
+
 if not WORKBOOK_PATH.exists():
     st.error(f"找不到数据文件：{WORKBOOK_PATH}，请确认 Excel 与本脚本在同一目录。")
     st.stop()
@@ -65,6 +71,7 @@ def build_signal_panel_custom(
     factors: dict,
     cfg: BacktestConfig,
     fw: dict,  # fund_weights
+    fund_override: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     weekly_ret = weekly_prices.pct_change()
     mom_short  = weekly_prices.pct_change(cfg.mom_short_weeks)
@@ -103,30 +110,33 @@ def build_signal_panel_custom(
     gs_ma52 = gs_ratio.rolling(52, min_periods=26).mean()
     macro_gs = (gs_ratio / gs_ma52 - 1).replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
-    fund = pd.DataFrame(index=common_idx, columns=ASSETS, dtype=float)
-    fund["黄金"] = fw["gold_real_rate"] * macro_real + fw["gold_dxy"] * macro_dxy + fw["gold_oi"] * gold_oi_chg
-    fund["白银"] = (
-        fw["silver_real_rate"] * macro_real
-        + fw["silver_dxy"] * macro_dxy
-        + fw["silver_gs"] * macro_gs
-        + fw["silver_oi"] * silver_oi_chg_inv
-    )
-    fund["铜"] = (
-        fw["copper_real_rate"] * macro_real
-        + fw["copper_dxy"] * macro_dxy
-        + fw["copper_pmi"] * macro_pmi
-        + fw["copper_fxi"] * copper_fxi_inv
-    )
-    fund["原油"] = (
-        fw["oil_dxy"] * macro_dxy
-        + fw["oil_pmi"] * macro_pmi
-        + fw["oil_vix"] * macro_vix
-    )
-    fund["煤炭"] = (
-        fw["coal_cn_pmi"] * macro_cn_pmi
-        + fw["coal_fxi"] * macro_fxi
-        + fw["coal_cn_ppi"] * macro_cn_ppi
-    )
+    if fund_override is not None:
+        fund = fund_override.reindex(index=common_idx, columns=ASSETS).fillna(0.0)
+    else:
+        fund = pd.DataFrame(index=common_idx, columns=ASSETS, dtype=float)
+        fund["黄金"] = fw["gold_real_rate"] * macro_real + fw["gold_dxy"] * macro_dxy + fw["gold_oi"] * gold_oi_chg
+        fund["白银"] = (
+            fw["silver_real_rate"] * macro_real
+            + fw["silver_dxy"] * macro_dxy
+            + fw["silver_gs"] * macro_gs
+            + fw["silver_oi"] * silver_oi_chg_inv
+        )
+        fund["铜"] = (
+            fw["copper_real_rate"] * macro_real
+            + fw["copper_dxy"] * macro_dxy
+            + fw["copper_pmi"] * macro_pmi
+            + fw["copper_fxi"] * copper_fxi_inv
+        )
+        fund["原油"] = (
+            fw["oil_dxy"] * macro_dxy
+            + fw["oil_pmi"] * macro_pmi
+            + fw["oil_vix"] * macro_vix
+        )
+        fund["煤炭"] = (
+            fw["coal_cn_pmi"] * macro_cn_pmi
+            + fw["coal_fxi"] * macro_fxi
+            + fw["coal_cn_ppi"] * macro_cn_ppi
+        )
 
     mom_z = zscore_row(mom_raw.reindex(columns=ASSETS).fillna(0.0))
     fund_reindexed = fund.reindex(columns=ASSETS)
@@ -151,7 +161,7 @@ def build_signal_panel_custom(
     )
 
 
-def run_model(prices, facts, fw, cost_bps, mom_w, mom_lb, mom_weights, use_ivw=False, ivw_weeks=12, cash_threshold=-99.0, top_n_free=5, market_cash_threshold=-99.0, market_full_threshold=-99.0, max_position_ratio=1.0):
+def run_model(prices, facts, fw, cost_bps, mom_w, mom_lb, mom_weights, use_ivw=False, ivw_weeks=12, cash_threshold=-99.0, top_n_free=5, market_cash_threshold=-99.0, market_full_threshold=-99.0, max_position_ratio=1.0, fund_override=None):
     cfg = BacktestConfig(
         cost_bps=cost_bps,
         momentum_lookback_weeks=mom_lb,
@@ -172,7 +182,7 @@ def run_model(prices, facts, fw, cost_bps, mom_w, mom_lb, mom_weights, use_ivw=F
     cfg.max_weight_per_asset = 1.0
     cfg.max_weight_per_sector = 1.0
     cfg.max_turnover = 2.0
-    panel = build_signal_panel_custom(prices, facts, cfg, fw)
+    panel = build_signal_panel_custom(prices, facts, cfg, fw, fund_override=fund_override)
     weights, strategy_ret = run_backtest(panel, cfg)
     nav = (1.0 + strategy_ret.fillna(0.0)).cumprod().rename("nav")
     return weights, strategy_ret, nav
@@ -265,6 +275,8 @@ with st.sidebar:
                                    help="低于此分数的品种直接排除；高于的品种全部配置（softmax加权）")
     if use_ivw:
         ivw_weeks = st.slider("波动率回溯周数", 4, 52, 12, 1, help="计算反波动率加权所用的滚动波动率窗口")
+    use_ml_fund = st.checkbox("ML基本面权重", value=False,
+                              help="用机器学习（Ridge回归）从数据自动学习各宏观因子的权重，替代手写规则。首次启用需约1分钟计算。")
     mom_weight = st.slider("动量权重", 0.0, 1.0, 0.6, 0.05,
                            help="基本面权重 = 1 - 动量权重")
     st.caption(f"→ 动量 {mom_weight:.0%}  /  基本面 {1-mom_weight:.0%}")
@@ -365,11 +377,13 @@ mom_weights = {"w_short": mw_short, "w_mid": mw_mid, "w_long": mw_long}
 
 # 首次或点击按钮时运行
 if "result" not in st.session_state or run_btn:
+    ml_fund = compute_ml_fund(weekly_prices, factors) if use_ml_fund else None
     with st.spinner("回测计算中..."):
         weights, strategy_ret, nav = run_model(
             weekly_prices, factors, fund_weights, cost_bps, mom_weight, mom_lookback, mom_weights,
             use_ivw, ivw_weeks if use_ivw else 12, cash_threshold, top_n_free,
-            market_cash_threshold, market_full_threshold, max_position_ratio
+            market_cash_threshold, market_full_threshold, max_position_ratio,
+            fund_override=ml_fund,
         )
     st.session_state.result = (weights, strategy_ret, nav)
 

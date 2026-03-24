@@ -17,6 +17,9 @@ from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
+from sklearn.linear_model import Ridge
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
 
 
 # =========================
@@ -198,10 +201,65 @@ def load_weekly_factors(path: Path) -> Dict[str, pd.Series]:
 
 
 def zscore_row(df: pd.DataFrame) -> pd.DataFrame:
-    """按每一周的截面做标准化，保留“相对强弱”而非绝对水平。"""
+    “””按每一周的截面做标准化，保留”相对强弱”而非绝对水平。”””
     mu = df.mean(axis=1)
     sigma = df.std(axis=1).replace(0, np.nan)
     return df.sub(mu, axis=0).div(sigma, axis=0).fillna(0.0)
+
+
+def build_ml_fund_scores(
+    weekly_prices: pd.DataFrame,
+    factors: Dict[str, pd.Series],
+    min_train_weeks: int = 104,
+) -> pd.DataFrame:
+    “””用滚动 Ridge 回归学习各宏观因子对各品种的贡献，替换手写基本面权重。
+
+    每一期用该期前所有历史数据训练，无未来信息泄露。
+    目标变量：该品种下一周收益相对等权均值的超额收益。
+    返回与 fund 同形状的得分矩阵（无需指定方向，Ridge 自动学习正负）。
+    “””
+    weekly_ret = weekly_prices.pct_change()
+    common_idx = weekly_prices.index
+
+    def factor_chg(key: str, periods: int = 4) -> pd.Series:
+        s = factors.get(key, pd.Series(dtype=float))
+        if s.empty:
+            return pd.Series(0.0, index=common_idx)
+        s2 = s.reindex(common_idx).ffill()
+        return s2.pct_change(periods).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+    macro_df = pd.DataFrame({
+        “real_rate”:  factor_chg(“real_rate”, 4),
+        “dxy”:        factor_chg(“dxy”, 4),
+        “vix”:        factor_chg(“vix”, 4),
+        “pmi”:        factor_chg(“pmi”, 4),
+        “cn_pmi”:     factor_chg(“cn_pmi”, 4),
+        “cn_ppi”:     factor_chg(“cn_ppi”, 4),
+        “gold_oi”:    factor_chg(“gold_oi”, 4),
+        “silver_oi”:  factor_chg(“silver_oi”, 4),
+        “copper_inv”: factor_chg(“copper_inventory”, 4),
+        “oil_inv”:    factor_chg(“oil_inventory”, 4),
+        “fxi”:        factor_chg(“fxi”, 4),
+        “ttf”:        factor_chg(“ttf”, 4),
+    }, index=common_idx)
+
+    ew_ret = weekly_ret.reindex(columns=ASSETS).mean(axis=1)
+    fund_scores = pd.DataFrame(np.nan, index=common_idx, columns=ASSETS)
+
+    for i in range(min_train_weeks, len(common_idx)):
+        dt = common_idx[i]
+        X_hist = macro_df.iloc[:i].fillna(0.0).values[:-1]   # t=0..i-2 的因子
+        for asset in ASSETS:
+            excess = weekly_ret[asset].iloc[:i] - ew_ret.iloc[:i]
+            y_hist = excess.shift(-1).iloc[:-1].fillna(0.0).values  # t+1 的超额收益
+            if len(y_hist) < min_train_weeks // 2:
+                continue
+            model = make_pipeline(StandardScaler(), Ridge(alpha=1.0))
+            model.fit(X_hist, y_hist)
+            X_now = macro_df.iloc[[i]].fillna(0.0).values
+            fund_scores.loc[dt, asset] = float(model.predict(X_now)[0])
+
+    return fund_scores.astype(float)
 
 
 def build_signal_panel(weekly_prices: pd.DataFrame, factors: Dict[str, pd.Series], cfg: BacktestConfig) -> pd.DataFrame:
