@@ -304,13 +304,13 @@ with st.sidebar:
     st.divider()
     st.header("🏅 黄金")
     g_rr  = st.slider("实际利率",    -1.0, 1.0,  0.35, 0.05, key="g_rr")
-    g_dxy = st.slider("美元指数（正向）", -1.0, 1.0, 0.25, 0.05, key="g_dxy", help="ML发现黄金与美元正相关，正值=美元涨看涨黄金")
-    g_vix = st.slider("VIX恐慌指数（正向）", -1.0, 1.0, 0.25, 0.05, key="g_vix", help="ML发现VIX是黄金最重要因子，正值=恐慌上升看涨黄金")
+    g_dxy = st.slider("美元指数", -1.0, 1.0, 0.25, 0.05, key="g_dxy", help="ML发现黄金与美元正相关，正值=美元涨看涨黄金")
+    g_vix = st.slider("VIX恐慌指数", -1.0, 1.0, 0.25, 0.05, key="g_vix", help="ML发现VIX是黄金最重要因子，正值=恐慌上升看涨黄金")
     g_oi  = st.slider("COMEX 持仓量", -1.0, 1.0,  0.15, 0.05, key="g_oi")
 
     st.header("🥈 白银")
     s_rr  = st.slider("实际利率",      -1.0, 1.0,  0.25, 0.05, key="s_rr")
-    s_dxy = st.slider("美元指数（正向）", -1.0, 1.0, 0.25, 0.05, key="s_dxy", help="ML发现白银与美元正相关")
+    s_dxy = st.slider("美元指数", -1.0, 1.0, 0.25, 0.05, key="s_dxy", help="ML发现白银与美元正相关")
     s_gs  = st.slider("金银比",        -1.0, 1.0,  0.35, 0.05, key="s_gs")
     s_oi  = st.slider("COMEX 持仓量",  -1.0, 1.0,  0.15, 0.05, key="s_oi")
 
@@ -326,7 +326,7 @@ with st.sidebar:
     o_vix = st.slider("VIX恐慌指数", -1.0, 1.0,  0.35, 0.05, key="o_vix")
 
     st.header("🪨 煤炭")
-    coal_cn_pmi = st.slider("中国制造业PMI（反向）", -1.0, 1.0, 0.40, 0.05, key="coal_cn_pmi", help="ML发现煤炭与中国PMI负相关，正值=PMI下降看涨煤炭")
+    coal_cn_pmi = st.slider("中国制造业PMI", -1.0, 1.0, 0.40, 0.05, key="coal_cn_pmi", help="ML发现煤炭与中国PMI负相关，正值=PMI下降看涨煤炭")
     coal_fxi    = st.slider("FXI中国需求",   -1.0, 1.0,  0.30, 0.05, key="coal_fxi")
     coal_cn_ppi = st.slider("中国PPI",       -1.0, 1.0,  0.30, 0.05, key="coal_cn_ppi")
 
