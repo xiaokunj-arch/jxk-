@@ -459,7 +459,7 @@ st.plotly_chart(fig_nav, use_container_width=True)
 # ─────────────────────────────────────────────
 st.subheader("年度收益")
 annual = strategy_ret.groupby(strategy_ret.index.year).apply(lambda x: (1 + x).prod() - 1)
-colors = ["#2ca02c" if v >= 0 else "#d62728" for v in annual.values]
+colors = ["#d62728" if v >= 0 else "#2ca02c" for v in annual.values]
 fig_ann = go.Figure(go.Bar(
     x=annual.index.astype(str),
     y=annual.values,
