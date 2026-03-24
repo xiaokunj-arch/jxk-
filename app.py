@@ -100,8 +100,11 @@ def build_signal_panel_custom(
     macro_cn_ppi = aligned_change("cn_ppi", 4)
     # 反向因子：统一取反，正值=看涨信号
     macro_real          = -aligned_change("real_rate", 4)
-    macro_dxy           = -aligned_change("dxy",       4)
-    macro_vix           = -aligned_change("vix",       4)
+    macro_dxy           = -aligned_change("dxy",       4)   # 美元↑→大宗承压（铜/原油用）
+    macro_dxy_pos       =  aligned_change("dxy",       4)   # 美元↑→正向（ML：黄金/白银正相关）
+    macro_vix           = -aligned_change("vix",       4)   # VIX↑→风险偏好↓（原油用）
+    macro_vix_pos       =  aligned_change("vix",       4)   # VIX↑→正向（ML：黄金避险正相关）
+    macro_cn_pmi_inv    = -aligned_change("cn_pmi",    4)   # 中国PMI↑→承压（ML：煤炭负相关）
     gold_oi_chg         = -aligned_change("gold_oi",   4)  # 黄金持仓↑→空头增加，承压
     silver_oi_chg_inv   = -aligned_change("silver_oi", 4)  # 白银持仓↑→空头增加，承压
     copper_fxi_inv      = -macro_fxi                        # FXI对铜价IC为负（煤炭保留正向）
@@ -114,10 +117,15 @@ def build_signal_panel_custom(
         fund = fund_override.reindex(index=common_idx, columns=ASSETS).fillna(0.0)
     else:
         fund = pd.DataFrame(index=common_idx, columns=ASSETS, dtype=float)
-        fund["黄金"] = fw["gold_real_rate"] * macro_real + fw["gold_dxy"] * macro_dxy + fw["gold_oi"] * gold_oi_chg
+        fund["黄金"] = (
+            fw["gold_real_rate"] * macro_real
+            + fw["gold_dxy"] * macro_dxy_pos
+            + fw["gold_vix"] * macro_vix_pos
+            + fw["gold_oi"] * gold_oi_chg
+        )
         fund["白银"] = (
             fw["silver_real_rate"] * macro_real
-            + fw["silver_dxy"] * macro_dxy
+            + fw["silver_dxy"] * macro_dxy_pos
             + fw["silver_gs"] * macro_gs
             + fw["silver_oi"] * silver_oi_chg_inv
         )
@@ -133,7 +141,7 @@ def build_signal_panel_custom(
             + fw["oil_vix"] * macro_vix
         )
         fund["煤炭"] = (
-            fw["coal_cn_pmi"] * macro_cn_pmi
+            fw["coal_cn_pmi"] * macro_cn_pmi_inv
             + fw["coal_fxi"] * macro_fxi
             + fw["coal_cn_ppi"] * macro_cn_ppi
         )
@@ -295,13 +303,14 @@ with st.sidebar:
 
     st.divider()
     st.header("🏅 黄金")
-    g_rr  = st.slider("实际利率",    -1.0, 1.0,  0.45, 0.05, key="g_rr")
-    g_dxy = st.slider("美元指数",    -1.0, 1.0,  0.35, 0.05, key="g_dxy")
-    g_oi  = st.slider("COMEX 持仓量", -1.0, 1.0,  0.20, 0.05, key="g_oi")
+    g_rr  = st.slider("实际利率",    -1.0, 1.0,  0.35, 0.05, key="g_rr")
+    g_dxy = st.slider("美元指数（正向）", -1.0, 1.0, 0.25, 0.05, key="g_dxy", help="ML发现黄金与美元正相关，正值=美元涨看涨黄金")
+    g_vix = st.slider("VIX恐慌指数（正向）", -1.0, 1.0, 0.25, 0.05, key="g_vix", help="ML发现VIX是黄金最重要因子，正值=恐慌上升看涨黄金")
+    g_oi  = st.slider("COMEX 持仓量", -1.0, 1.0,  0.15, 0.05, key="g_oi")
 
     st.header("🥈 白银")
     s_rr  = st.slider("实际利率",      -1.0, 1.0,  0.25, 0.05, key="s_rr")
-    s_dxy = st.slider("美元指数",      -1.0, 1.0,  0.25, 0.05, key="s_dxy")
+    s_dxy = st.slider("美元指数（正向）", -1.0, 1.0, 0.25, 0.05, key="s_dxy", help="ML发现白银与美元正相关")
     s_gs  = st.slider("金银比",        -1.0, 1.0,  0.35, 0.05, key="s_gs")
     s_oi  = st.slider("COMEX 持仓量",  -1.0, 1.0,  0.15, 0.05, key="s_oi")
 
@@ -317,7 +326,7 @@ with st.sidebar:
     o_vix = st.slider("VIX恐慌指数", -1.0, 1.0,  0.35, 0.05, key="o_vix")
 
     st.header("🪨 煤炭")
-    coal_cn_pmi = st.slider("中国制造业PMI", -1.0, 1.0,  0.40, 0.05, key="coal_cn_pmi")
+    coal_cn_pmi = st.slider("中国制造业PMI（反向）", -1.0, 1.0, 0.40, 0.05, key="coal_cn_pmi", help="ML发现煤炭与中国PMI负相关，正值=PMI下降看涨煤炭")
     coal_fxi    = st.slider("FXI中国需求",   -1.0, 1.0,  0.30, 0.05, key="coal_fxi")
     coal_cn_ppi = st.slider("中国PPI",       -1.0, 1.0,  0.30, 0.05, key="coal_cn_ppi")
 
@@ -327,7 +336,7 @@ with st.sidebar:
     if abs(mom_weight - 0.5) > 0.49:
         _warns.append(f"动量/基本面权重极端（{mom_weight:.0%} / {1-mom_weight:.0%}），信号可能失衡")
     for _name, _vals in [
-        ("黄金", [g_rr, g_dxy, g_oi]),
+        ("黄金", [g_rr, g_dxy, g_vix, g_oi]),
         ("白银", [s_rr, s_dxy, s_gs, s_oi]),
         ("铜",   [c_rr, c_dxy, c_pmi, c_fxi]),
         ("原油", [o_dxy, o_pmi, o_vix]),
@@ -362,7 +371,7 @@ with st.sidebar:
 # 收集参数 & 运行
 # ─────────────────────────────────────────────
 fund_weights = {
-    "gold_real_rate": g_rr, "gold_dxy": g_dxy, "gold_oi": g_oi,
+    "gold_real_rate": g_rr, "gold_dxy": g_dxy, "gold_vix": g_vix, "gold_oi": g_oi,
     "silver_real_rate": s_rr, "silver_dxy": s_dxy, "silver_gs": s_gs, "silver_oi": s_oi,
     "copper_real_rate": c_rr, "copper_dxy": c_dxy, "copper_pmi": c_pmi, "copper_fxi": c_fxi,
     "oil_dxy": o_dxy, "oil_pmi": o_pmi, "oil_vix": o_vix,

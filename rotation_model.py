@@ -298,8 +298,11 @@ def build_signal_panel(weekly_prices: pd.DataFrame, factors: Dict[str, pd.Series
     macro_cn_ppi = aligned_change("cn_ppi", 4)
     # 反向因子：上涨→看跌，统一取反使正值=看涨信号
     macro_real         = -aligned_change("real_rate",  4)  # 实际利率↑→大宗承压
-    macro_dxy          = -aligned_change("dxy",        4)  # 美元↑→大宗承压
-    macro_vix          = -aligned_change("vix",        4)  # VIX↑→风险偏好↓
+    macro_dxy          = -aligned_change("dxy",        4)  # 美元↑→大宗承压（铜/原油用）
+    macro_dxy_pos      =  aligned_change("dxy",        4)  # 美元↑→正向（ML：黄金/白银正相关）
+    macro_vix          = -aligned_change("vix",        4)  # VIX↑→风险偏好↓（原油用）
+    macro_vix_pos      =  aligned_change("vix",        4)  # VIX↑→正向（ML：黄金避险正相关）
+    macro_cn_pmi_inv   = -aligned_change("cn_pmi",     4)  # 中国PMI↑→承压（ML：煤炭负相关）
     macro_gold_oi_inv  = -aligned_change("gold_oi",    4)  # 黄金持仓↑→空头增加，承压
     macro_silver_oi_inv= -aligned_change("silver_oi",  4)  # 白银持仓↑→空头增加，承压
     macro_copper_fxi_inv = -macro_fxi                       # FXI对铜价IC为负（煤炭保留正向）
@@ -310,11 +313,11 @@ def build_signal_panel(weekly_prices: pd.DataFrame, factors: Dict[str, pd.Series
     macro_gs = (gs_ratio / gs_ma52 - 1).replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
     fund = pd.DataFrame(index=common_idx, columns=ASSETS, dtype=float)
-    fund["黄金"] = 0.45 * macro_real + 0.35 * macro_dxy + 0.20 * macro_gold_oi_inv
-    fund["白银"] = 0.25 * macro_real + 0.25 * macro_dxy + 0.35 * macro_gs + 0.15 * macro_silver_oi_inv
+    fund["黄金"] = 0.35 * macro_real + 0.25 * macro_dxy_pos + 0.25 * macro_vix_pos + 0.15 * macro_gold_oi_inv
+    fund["白银"] = 0.25 * macro_real + 0.25 * macro_dxy_pos + 0.35 * macro_gs + 0.15 * macro_silver_oi_inv
     fund["铜"] = 0.25 * macro_real + 0.20 * macro_dxy + 0.30 * macro_pmi + 0.25 * macro_copper_fxi_inv
     fund["原油"] = 0.40 * macro_dxy + 0.25 * macro_pmi + 0.35 * macro_vix
-    fund["煤炭"] = 0.40 * macro_cn_pmi + 0.30 * macro_fxi + 0.30 * macro_cn_ppi
+    fund["煤炭"] = 0.40 * macro_cn_pmi_inv + 0.30 * macro_fxi + 0.30 * macro_cn_ppi
 
     mom_z = zscore_row(mom_raw.reindex(columns=ASSETS).fillna(0.0))
     fund_reindexed = fund.reindex(columns=ASSETS)
