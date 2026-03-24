@@ -201,7 +201,7 @@ def load_weekly_factors(path: Path) -> Dict[str, pd.Series]:
 
 
 def zscore_row(df: pd.DataFrame) -> pd.DataFrame:
-    “””按每一周的截面做标准化，保留”相对强弱”而非绝对水平。”””
+    """按每一周的截面做标准化，保留相对强弱而非绝对水平。"""
     mu = df.mean(axis=1)
     sigma = df.std(axis=1).replace(0, np.nan)
     return df.sub(mu, axis=0).div(sigma, axis=0).fillna(0.0)
@@ -212,12 +212,12 @@ def build_ml_fund_scores(
     factors: Dict[str, pd.Series],
     min_train_weeks: int = 104,
 ) -> pd.DataFrame:
-    “””用滚动 Ridge 回归学习各宏观因子对各品种的贡献，替换手写基本面权重。
+    """用滚动 Ridge 回归学习各宏观因子对各品种的贡献，替换手写基本面权重。
 
     每一期用该期前所有历史数据训练，无未来信息泄露。
     目标变量：该品种下一周收益相对等权均值的超额收益。
     返回与 fund 同形状的得分矩阵（无需指定方向，Ridge 自动学习正负）。
-    “””
+    """
     weekly_ret = weekly_prices.pct_change()
     common_idx = weekly_prices.index
 
@@ -229,18 +229,18 @@ def build_ml_fund_scores(
         return s2.pct_change(periods).replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
     macro_df = pd.DataFrame({
-        “real_rate”:  factor_chg(“real_rate”, 4),
-        “dxy”:        factor_chg(“dxy”, 4),
-        “vix”:        factor_chg(“vix”, 4),
-        “pmi”:        factor_chg(“pmi”, 4),
-        “cn_pmi”:     factor_chg(“cn_pmi”, 4),
-        “cn_ppi”:     factor_chg(“cn_ppi”, 4),
-        “gold_oi”:    factor_chg(“gold_oi”, 4),
-        “silver_oi”:  factor_chg(“silver_oi”, 4),
-        “copper_inv”: factor_chg(“copper_inventory”, 4),
-        “oil_inv”:    factor_chg(“oil_inventory”, 4),
-        “fxi”:        factor_chg(“fxi”, 4),
-        “ttf”:        factor_chg(“ttf”, 4),
+        "real_rate":  factor_chg("real_rate", 4),
+        "dxy":        factor_chg("dxy", 4),
+        "vix":        factor_chg("vix", 4),
+        "pmi":        factor_chg("pmi", 4),
+        "cn_pmi":     factor_chg("cn_pmi", 4),
+        "cn_ppi":     factor_chg("cn_ppi", 4),
+        "gold_oi":    factor_chg("gold_oi", 4),
+        "silver_oi":  factor_chg("silver_oi", 4),
+        "copper_inv": factor_chg("copper_inventory", 4),
+        "oil_inv":    factor_chg("oil_inventory", 4),
+        "fxi":        factor_chg("fxi", 4),
+        "ttf":        factor_chg("ttf", 4),
     }, index=common_idx)
 
     ew_ret = weekly_ret.reindex(columns=ASSETS).mean(axis=1)
@@ -351,7 +351,7 @@ def _select_top_assets(score_row: pd.Series, cfg: BacktestConfig) -> List[str]:
         if len(chosen) >= cfg.top_n:
             break
         sector = SECTOR_MAP.get(asset, "其他")
-        # 行业约束用“可实现权重”估算，避免 Top1 时被误判为不可持仓。
+        # 行业约束用"可实现权重"估算，避免 Top1 时被误判为不可持仓。
         eq_weight_est = min(1.0 / max(cfg.top_n, 1), cfg.max_weight_per_asset)
         sec_w = sector_weight.get(sector, 0.0) + eq_weight_est
         if sec_w > cfg.max_weight_per_sector + 1e-12:
