@@ -184,6 +184,10 @@ def load_weekly_factors(path: Path) -> Dict[str, pd.Series]:
         "coal_inventory": ["煤炭库存"],
         "cn_pmi": ["中国制造业PMI"],
         "cn_ppi": ["中国ppi"],
+        "gold_cot": ["COT黄金"],
+        "silver_cot": ["COT白银"],
+        "copper_cot": ["COT铜"],
+        "oil_cot": ["COT原油"],
     }
 
     xls = pd.ExcelFile(path)
@@ -270,11 +274,12 @@ def build_signal_panel(weekly_prices: pd.DataFrame, factors: Dict[str, pd.Series
     3) 综合评分：动量与基本面线性组合
     """
     weekly_ret = weekly_prices.pct_change()
-    mom_short  = weekly_prices.pct_change(cfg.mom_short_weeks)
     mom_mid    = weekly_prices.pct_change(cfg.momentum_lookback_weeks)
     mom_long   = weekly_prices.pct_change(cfg.mom_long_weeks)
+    # 12-1月动量：用52周收益率但跳过最近4周（规避短期反转），IC更高
+    mom_12_1   = weekly_prices.pct_change(cfg.mom_long_weeks).shift(cfg.mom_short_weeks)
     mom_raw = (
-        cfg.mom_w_short * mom_short
+        cfg.mom_w_short * mom_12_1
         + cfg.mom_w_mid * mom_mid
         + cfg.mom_w_long * mom_long
     )
@@ -288,6 +293,17 @@ def build_signal_panel(weekly_prices: pd.DataFrame, factors: Dict[str, pd.Series
             return pd.Series(0.0, index=common_idx)
         s2 = s.reindex(common_idx).ffill()
         return s2.pct_change(periods).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+    def aligned_zscore(key: str, window: int = 52) -> pd.Series:
+        """将因子对齐到交易日历后计算滚动z-score（适合COT水平位置信号）。"""
+        s = factors.get(key, pd.Series(dtype=float))
+        if s.empty:
+            return pd.Series(0.0, index=common_idx)
+        s2 = s.reindex(common_idx).ffill()
+        mu = s2.rolling(window, min_periods=window // 2).mean()
+        sd = s2.rolling(window, min_periods=window // 2).std(ddof=0)
+        z = (s2 - mu) / sd.replace(0, np.nan)
+        return z.fillna(0.0)
 
     # 正向因子：上涨→看涨
     macro_pmi = aligned_change("pmi", 4)
@@ -306,6 +322,11 @@ def build_signal_panel(weekly_prices: pd.DataFrame, factors: Dict[str, pd.Series
     macro_gold_oi_inv  = -aligned_change("gold_oi",    4)  # 黄金持仓↑→空头增加，承压
     macro_silver_oi_inv= -aligned_change("silver_oi",  4)  # 白银持仓↑→空头增加，承压
     macro_copper_fxi_inv = -macro_fxi                       # FXI对铜价IC为负（煤炭保留正向）
+    # COT管理资金净头寸（用滚动z-score水平位置，IC为负的取反：过度拥挤时价格反转）
+    macro_gold_cot   =  aligned_zscore("gold_cot",   52)   # 黄金：正向
+    macro_silver_cot = -aligned_zscore("silver_cot", 52)   # 白银：反向（拥挤做多→反转）
+    macro_copper_cot = -aligned_zscore("copper_cot", 52)   # 铜：反向（拥挤做多→反转）
+    macro_oil_cot    =  aligned_zscore("oil_cot",    52)   # 原油：正向
 
     # 金银比均值回归：高于52周均值说明白银相对黄金偏便宜，对白银是正信号
     gs_ratio = (weekly_prices["黄金"] / weekly_prices["白银"]).replace([np.inf, -np.inf], np.nan)
@@ -313,10 +334,10 @@ def build_signal_panel(weekly_prices: pd.DataFrame, factors: Dict[str, pd.Series
     macro_gs = (gs_ratio / gs_ma52 - 1).replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
     fund = pd.DataFrame(index=common_idx, columns=ASSETS, dtype=float)
-    fund["黄金"] = 0.35 * macro_real + 0.25 * macro_dxy_pos + 0.25 * macro_vix_pos + 0.15 * macro_gold_oi_inv
-    fund["白银"] = 0.25 * macro_real + 0.25 * macro_dxy_pos + 0.35 * macro_gs + 0.15 * macro_silver_oi_inv
-    fund["铜"] = 0.25 * macro_real + 0.20 * macro_dxy + 0.30 * macro_pmi + 0.25 * macro_copper_fxi_inv
-    fund["原油"] = 0.40 * macro_dxy + 0.25 * macro_pmi + 0.35 * macro_vix
+    fund["黄金"] = 0.25 * macro_real + 0.20 * macro_dxy_pos + 0.20 * macro_vix_pos + 0.15 * macro_gold_oi_inv + 0.20 * macro_gold_cot
+    fund["白银"] = 0.20 * macro_real + 0.20 * macro_dxy_pos + 0.25 * macro_gs + 0.15 * macro_silver_oi_inv + 0.20 * macro_silver_cot
+    fund["铜"]   = 0.20 * macro_real + 0.15 * macro_dxy + 0.25 * macro_pmi + 0.20 * macro_copper_fxi_inv + 0.20 * macro_copper_cot
+    fund["原油"] = 0.25 * macro_dxy + 0.20 * macro_pmi + 0.30 * macro_vix + 0.25 * macro_oil_cot
     fund["煤炭"] = 0.40 * macro_cn_pmi_inv + 0.30 * macro_fxi + 0.30 * macro_cn_ppi
 
     mom_z = zscore_row(mom_raw.reindex(columns=ASSETS).fillna(0.0))

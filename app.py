@@ -74,11 +74,11 @@ def build_signal_panel_custom(
     fund_override: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     weekly_ret = weekly_prices.pct_change()
-    mom_short  = weekly_prices.pct_change(cfg.mom_short_weeks)
     mom_mid    = weekly_prices.pct_change(cfg.momentum_lookback_weeks)
     mom_long   = weekly_prices.pct_change(cfg.mom_long_weeks)
+    mom_12_1   = weekly_prices.pct_change(cfg.mom_long_weeks).shift(cfg.mom_short_weeks)
     mom_raw = (
-        cfg.mom_w_short * mom_short
+        cfg.mom_w_short * mom_12_1
         + cfg.mom_w_mid * mom_mid
         + cfg.mom_w_long * mom_long
     )
@@ -90,6 +90,16 @@ def build_signal_panel_custom(
             return pd.Series(0.0, index=common_idx)
         s2 = s.reindex(common_idx).ffill()
         return s2.pct_change(periods).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+    def aligned_zscore(key: str, window: int = 52) -> pd.Series:
+        s = factors.get(key, pd.Series(dtype=float))
+        if s.empty:
+            return pd.Series(0.0, index=common_idx)
+        s2 = s.reindex(common_idx).ffill()
+        mu = s2.rolling(window, min_periods=window // 2).mean()
+        sd = s2.rolling(window, min_periods=window // 2).std(ddof=0)
+        z = (s2 - mu) / sd.replace(0, np.nan)
+        return z.fillna(0.0)
 
     # 正向因子
     macro_pmi = aligned_change("pmi", 4)
@@ -108,6 +118,11 @@ def build_signal_panel_custom(
     gold_oi_chg         = -aligned_change("gold_oi",   4)  # 黄金持仓↑→空头增加，承压
     silver_oi_chg_inv   = -aligned_change("silver_oi", 4)  # 白银持仓↑→空头增加，承压
     copper_fxi_inv      = -macro_fxi                        # FXI对铜价IC为负（煤炭保留正向）
+    # COT管理资金净头寸（滚动z-score水平位置，IC为负的取反：过度拥挤时价格反转）
+    macro_gold_cot   =  aligned_zscore("gold_cot",   52)   # 正向
+    macro_silver_cot = -aligned_zscore("silver_cot", 52)   # 反向（拥挤做多→反转）
+    macro_copper_cot = -aligned_zscore("copper_cot", 52)   # 反向（拥挤做多→反转）
+    macro_oil_cot    =  aligned_zscore("oil_cot",    52)   # 正向
 
     gs_ratio = (weekly_prices["黄金"] / weekly_prices["白银"]).replace([np.inf, -np.inf], np.nan)
     gs_ma52 = gs_ratio.rolling(52, min_periods=26).mean()
@@ -122,23 +137,27 @@ def build_signal_panel_custom(
             + fw["gold_dxy"] * macro_dxy_pos
             + fw["gold_vix"] * macro_vix_pos
             + fw["gold_oi"] * gold_oi_chg
+            + fw["gold_cot"] * macro_gold_cot
         )
         fund["白银"] = (
             fw["silver_real_rate"] * macro_real
             + fw["silver_dxy"] * macro_dxy_pos
             + fw["silver_gs"] * macro_gs
             + fw["silver_oi"] * silver_oi_chg_inv
+            + fw["silver_cot"] * macro_silver_cot
         )
         fund["铜"] = (
             fw["copper_real_rate"] * macro_real
             + fw["copper_dxy"] * macro_dxy
             + fw["copper_pmi"] * macro_pmi
             + fw["copper_fxi"] * copper_fxi_inv
+            + fw["copper_cot"] * macro_copper_cot
         )
         fund["原油"] = (
             fw["oil_dxy"] * macro_dxy
             + fw["oil_pmi"] * macro_pmi
             + fw["oil_vix"] * macro_vix
+            + fw["oil_cot"] * macro_oil_cot
         )
         fund["煤炭"] = (
             fw["coal_cn_pmi"] * macro_cn_pmi_inv
@@ -307,23 +326,27 @@ with st.sidebar:
     g_dxy = st.slider("美元指数", -1.0, 1.0, 0.25, 0.05, key="g_dxy")
     g_vix = st.slider("VIX恐慌指数", -1.0, 1.0, 0.25, 0.05, key="g_vix")
     g_oi  = st.slider("COMEX 持仓量", -1.0, 1.0,  0.15, 0.05, key="g_oi")
+    g_cot = st.slider("COT管理资金", -1.0, 1.0,  0.20, 0.05, key="g_cot")
 
     st.header("🥈 白银")
     s_rr  = st.slider("实际利率",      -1.0, 1.0,  0.25, 0.05, key="s_rr")
     s_dxy = st.slider("美元指数", -1.0, 1.0, 0.25, 0.05, key="s_dxy")
     s_gs  = st.slider("金银比",        -1.0, 1.0,  0.35, 0.05, key="s_gs")
     s_oi  = st.slider("COMEX 持仓量",  -1.0, 1.0,  0.15, 0.05, key="s_oi")
+    s_cot = st.slider("COT管理资金",   -1.0, 1.0,  0.20, 0.05, key="s_cot")
 
     st.header("🔩 铜")
     c_rr  = st.slider("实际利率",    -1.0, 1.0,  0.25, 0.05, key="c_rr")
     c_dxy = st.slider("美元指数",    -1.0, 1.0,  0.20, 0.05, key="c_dxy")
     c_pmi = st.slider("PMI",         -1.0, 1.0,  0.30, 0.05, key="c_pmi")
     c_fxi = st.slider("FXI中国需求", -1.0, 1.0,  0.25, 0.05, key="c_fxi")
+    c_cot = st.slider("COT管理资金", -1.0, 1.0,  0.20, 0.05, key="c_cot")
 
     st.header("🛢️ 原油")
     o_dxy = st.slider("美元指数",    -1.0, 1.0,  0.40, 0.05, key="o_dxy")
     o_pmi = st.slider("PMI",         -1.0, 1.0,  0.25, 0.05, key="o_pmi")
     o_vix = st.slider("VIX恐慌指数", -1.0, 1.0,  0.35, 0.05, key="o_vix")
+    o_cot = st.slider("COT管理资金", -1.0, 1.0,  0.25, 0.05, key="o_cot")
 
     st.header("🪨 煤炭")
     coal_cn_pmi = st.slider("中国制造业PMI", -1.0, 1.0, 0.40, 0.05, key="coal_cn_pmi")
@@ -336,10 +359,10 @@ with st.sidebar:
     if abs(mom_weight - 0.5) > 0.49:
         _warns.append(f"动量/基本面权重极端（{mom_weight:.0%} / {1-mom_weight:.0%}），信号可能失衡")
     for _name, _vals in [
-        ("黄金", [g_rr, g_dxy, g_vix, g_oi]),
-        ("白银", [s_rr, s_dxy, s_gs, s_oi]),
-        ("铜",   [c_rr, c_dxy, c_pmi, c_fxi]),
-        ("原油", [o_dxy, o_pmi, o_vix]),
+        ("黄金", [g_rr, g_dxy, g_vix, g_oi, g_cot]),
+        ("白银", [s_rr, s_dxy, s_gs, s_oi, s_cot]),
+        ("铜",   [c_rr, c_dxy, c_pmi, c_fxi, c_cot]),
+        ("原油", [o_dxy, o_pmi, o_vix, o_cot]),
         ("煤炭", [coal_cn_pmi, coal_fxi, coal_cn_ppi]),
     ]:
         _s = sum(abs(v) for v in _vals)
@@ -371,10 +394,10 @@ with st.sidebar:
 # 收集参数 & 运行
 # ─────────────────────────────────────────────
 fund_weights = {
-    "gold_real_rate": g_rr, "gold_dxy": g_dxy, "gold_vix": g_vix, "gold_oi": g_oi,
-    "silver_real_rate": s_rr, "silver_dxy": s_dxy, "silver_gs": s_gs, "silver_oi": s_oi,
-    "copper_real_rate": c_rr, "copper_dxy": c_dxy, "copper_pmi": c_pmi, "copper_fxi": c_fxi,
-    "oil_dxy": o_dxy, "oil_pmi": o_pmi, "oil_vix": o_vix,
+    "gold_real_rate": g_rr, "gold_dxy": g_dxy, "gold_vix": g_vix, "gold_oi": g_oi, "gold_cot": g_cot,
+    "silver_real_rate": s_rr, "silver_dxy": s_dxy, "silver_gs": s_gs, "silver_oi": s_oi, "silver_cot": s_cot,
+    "copper_real_rate": c_rr, "copper_dxy": c_dxy, "copper_pmi": c_pmi, "copper_fxi": c_fxi, "copper_cot": c_cot,
+    "oil_dxy": o_dxy, "oil_pmi": o_pmi, "oil_vix": o_vix, "oil_cot": o_cot,
     "coal_cn_pmi": coal_cn_pmi, "coal_fxi": coal_fxi, "coal_cn_ppi": coal_cn_ppi,
 }
 
