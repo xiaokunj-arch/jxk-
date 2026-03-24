@@ -74,11 +74,11 @@ def build_signal_panel_custom(
     fund_override: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     weekly_ret = weekly_prices.pct_change()
+    mom_short  = weekly_prices.pct_change(cfg.mom_short_weeks)
     mom_mid    = weekly_prices.pct_change(cfg.momentum_lookback_weeks)
     mom_long   = weekly_prices.pct_change(cfg.mom_long_weeks)
-    mom_12_1   = weekly_prices.pct_change(cfg.mom_long_weeks).shift(cfg.mom_short_weeks)
     mom_raw = (
-        cfg.mom_w_short * mom_12_1
+        cfg.mom_w_short * mom_short
         + cfg.mom_w_mid * mom_mid
         + cfg.mom_w_long * mom_long
     )

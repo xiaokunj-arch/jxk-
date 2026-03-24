@@ -269,17 +269,16 @@ def build_ml_fund_scores(
 def build_signal_panel(weekly_prices: pd.DataFrame, factors: Dict[str, pd.Series], cfg: BacktestConfig) -> pd.DataFrame:
     """
     信号层：
-    1) 动量：12-1周（可配置）
+    1) 动量：短/中/长期（可配置）
     2) 基本面：利率/美元/PMI/库存持仓变化加权
     3) 综合评分：动量与基本面线性组合
     """
     weekly_ret = weekly_prices.pct_change()
+    mom_short  = weekly_prices.pct_change(cfg.mom_short_weeks)
     mom_mid    = weekly_prices.pct_change(cfg.momentum_lookback_weeks)
     mom_long   = weekly_prices.pct_change(cfg.mom_long_weeks)
-    # 12-1月动量：用52周收益率但跳过最近4周（规避短期反转），IC更高
-    mom_12_1   = weekly_prices.pct_change(cfg.mom_long_weeks).shift(cfg.mom_short_weeks)
     mom_raw = (
-        cfg.mom_w_short * mom_12_1
+        cfg.mom_w_short * mom_short
         + cfg.mom_w_mid * mom_mid
         + cfg.mom_w_long * mom_long
     )
