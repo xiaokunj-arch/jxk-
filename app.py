@@ -399,10 +399,10 @@ if "result" not in st.session_state or run_btn:
 weights, strategy_ret, nav = st.session_state.result
 perf = calc_perf(strategy_ret)
 
-# 基准：持有黄金
-gold_ret = weekly_prices["黄金"].pct_change().reindex(strategy_ret.index).fillna(0.0)
-gold_nav = (1.0 + gold_ret).cumprod().rename("gold_nav")
-perf_bm = calc_perf(gold_ret)
+# 基准：等权持有五个品种
+bm_ret = weekly_prices[ASSETS].pct_change().reindex(strategy_ret.index).fillna(0.0).mean(axis=1)
+bm_nav = (1.0 + bm_ret).cumprod().rename("bm_nav")
+perf_bm = calc_perf(bm_ret)
 
 
 # ─────────────────────────────────────────────
@@ -427,7 +427,7 @@ m2.metric("年化波动", fmt(perf["ann_vol"],    pct=True), delta(perf["ann_vol
 m3.metric("Sharpe",   fmt(perf["sharpe"]),               delta(perf["sharpe"],     perf_bm["sharpe"]),               delta_color="inverse")
 m4.metric("最大回撤", fmt(perf["max_drawdown"], pct=True), delta(perf["max_drawdown"], perf_bm["max_drawdown"], pct=True), delta_color="inverse")
 m5.metric("胜率",     fmt(perf["win_rate"],    pct=True), delta(perf["win_rate"],   perf_bm["win_rate"],   pct=True), delta_color="inverse")
-st.caption(f"↑↓ vs 持有黄金基准（年化收益 {fmt(perf_bm['ann_return'], pct=True)}，Sharpe {fmt(perf_bm['sharpe'])}，最大回撤 {fmt(perf_bm['max_drawdown'], pct=True)}）")
+st.caption(f"↑↓ vs 等权基准（年化收益 {fmt(perf_bm['ann_return'], pct=True)}，Sharpe {fmt(perf_bm['sharpe'])}，最大回撤 {fmt(perf_bm['max_drawdown'], pct=True)}）")
 
 # ─────────────────────────────────────────────
 # 净值曲线
@@ -441,10 +441,10 @@ fig_nav.add_trace(go.Scatter(
     hovertemplate="%{x|%Y-%m-%d}  净值: %{y:.4f}<extra></extra>",
 ))
 fig_nav.add_trace(go.Scatter(
-    x=gold_nav.index, y=gold_nav.values,
-    name="持有黄金",
+    x=bm_nav.index, y=bm_nav.values,
+    name="等权基准",
     line=dict(color="#f5a623", width=1.5, dash="dot"),
-    hovertemplate="%{x|%Y-%m-%d}  黄金: %{y:.4f}<extra></extra>",
+    hovertemplate="%{x|%Y-%m-%d}  等权基准: %{y:.4f}<extra></extra>",
 ))
 fig_nav.update_layout(
     height=420,
