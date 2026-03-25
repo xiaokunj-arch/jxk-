@@ -16,6 +16,12 @@ from io import StringIO
 from datetime import datetime
 import time
 
+try:
+    import akshare as ak
+    HAS_AKSHARE = True
+except ImportError:
+    HAS_AKSHARE = False
+
 MASTER_FILE = "大宗商品轮动_数据2.xlsx"
 START = "1990-01-01"
 
@@ -208,6 +214,49 @@ def main():
         else:
             failed.append(sheet_name)
         time.sleep(0.3)
+
+    # ── 动力煤期货价格（郑商所 ZC 主力合约）──
+    print("\n【动力煤期货价格（郑商所）】")
+    print("  ↓ 煤炭期货价格（期货价格表第9/10列）...", end=" ", flush=True)
+    if not HAS_AKSHARE:
+        print("❌ 需先安装 akshare: pip install akshare")
+    else:
+        try:
+            ws_px = wb["期货价格"]
+            rows_px = list(ws_px.iter_rows(values_only=True))
+            coal_dates = {pd.Timestamp(r[8]).date() for r in rows_px[1:]
+                          if r and r[8] is not None and r[9] is not None}
+            last_coal = max(coal_dates) if coal_dates else datetime(2013,1,1).date()
+            dates_to_fetch = [d for d in pd.bdate_range(str(last_coal), datetime.today().strftime("%Y-%m-%d"))
+                              if d.date() > last_coal]
+            new_coal = {}
+            for dt in dates_to_fetch:
+                try:
+                    df_zc = ak.get_czce_daily(date=dt.strftime("%Y%m%d"))
+                    zc = df_zc[df_zc["variety"] == "ZC"].copy()
+                    if zc.empty:
+                        continue
+                    zc["open_interest"] = pd.to_numeric(zc["open_interest"], errors="coerce")
+                    zc["settle"] = pd.to_numeric(zc["settle"], errors="coerce")
+                    val = float(zc.loc[zc["open_interest"].idxmax(), "settle"])
+                    if val > 0:
+                        new_coal[dt.date()] = val
+                    time.sleep(0.3)
+                except Exception:
+                    pass
+            if new_coal:
+                last_row = max((i for i in range(2, ws_px.max_row + 1)
+                                if ws_px.cell(i, 9).value is not None), default=1)
+                for i, (dt, price) in enumerate(sorted(new_coal.items()), 1):
+                    ws_px.cell(last_row + i, 9, dt)
+                    ws_px.cell(last_row + i, 10, price)
+                print(f"✅ 新增 {len(new_coal)} 行，最新: {max(new_coal.keys())}")
+                results.append("煤炭期货价格")
+            else:
+                print("已是最新")
+        except Exception as e:
+            print(f"❌ {e}")
+            failed.append("煤炭期货价格")
 
     wb.save(MASTER_FILE)
 
