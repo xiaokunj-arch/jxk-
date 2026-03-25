@@ -56,6 +56,35 @@ def compute_ml_fund(_prices, _factors, min_train_weeks=104):
     return build_ml_fund_scores(_prices, _factors, min_train_weeks)
 
 
+@st.cache_data(show_spinner="计算滚动IC权重（约需20秒）...")
+def compute_ic_fund(_factor_matrix: pd.DataFrame, _weekly_ret: pd.DataFrame, ic_window: int = 52) -> pd.DataFrame:
+    """
+    按滚动Pearson IC动态加权基本面因子，替代固定权重。
+    - 每个(因子, 资产)对独立计算滚动IC
+    - fund[asset] = sum(IC_i * factor_i) / sum(|IC_i|)
+    - IC接近0的因子自动权重趋近0，无需手写规则
+    """
+    common_idx = _factor_matrix.index
+    fund = pd.DataFrame(0.0, index=common_idx, columns=ASSETS)
+
+    for asset in ASSETS:
+        if asset not in _weekly_ret.columns:
+            continue
+        ret_fwd = _weekly_ret[asset].shift(-1)
+        weighted = pd.Series(0.0, index=common_idx)
+        total_abs_ic = pd.Series(0.0, index=common_idx)
+
+        for col in _factor_matrix.columns:
+            fseries = _factor_matrix[col]
+            ic = fseries.rolling(ic_window, min_periods=ic_window // 2).corr(ret_fwd).fillna(0.0)
+            weighted += ic * fseries
+            total_abs_ic += ic.abs()
+
+        fund[asset] = weighted.div(total_abs_ic.replace(0, np.nan)).fillna(0.0)
+
+    return fund
+
+
 if not WORKBOOK_PATH.exists():
     st.error(f"找不到数据文件：{WORKBOOK_PATH}，请确认 Excel 与本脚本在同一目录。")
     st.stop()
@@ -72,6 +101,8 @@ def build_signal_panel_custom(
     cfg: BacktestConfig,
     fw: dict,  # fund_weights
     fund_override: pd.DataFrame | None = None,
+    use_ic_fund: bool = False,
+    ic_window: int = 52,
 ) -> pd.DataFrame:
     weekly_ret = weekly_prices.pct_change()
     mom_short  = weekly_prices.pct_change(cfg.mom_short_weeks)
@@ -130,6 +161,32 @@ def build_signal_panel_custom(
 
     if fund_override is not None:
         fund = fund_override.reindex(index=common_idx, columns=ASSETS).fillna(0.0)
+    elif use_ic_fund:
+        # IC动态加权：把所有因子打包，滚动计算每个(因子,资产)对的IC，IC作为权重
+        factor_matrix = pd.DataFrame({
+            "real_rate":    macro_real,
+            "dxy_pos":      macro_dxy_pos,
+            "dxy_neg":      macro_dxy,
+            "vix_pos":      macro_vix_pos,
+            "vix_neg":      macro_vix,
+            "pmi":          macro_pmi,
+            "ppi":          macro_ppi,
+            "cn_pmi":       macro_cn_pmi,
+            "cn_pmi_inv":   macro_cn_pmi_inv,
+            "cn_ppi":       macro_cn_ppi,
+            "fxi":          macro_fxi,
+            "fxi_inv":      copper_fxi_inv,
+            "ttf":          macro_ttf,
+            "gold_oi":      gold_oi_chg,
+            "silver_oi":    silver_oi_chg_inv,
+            "gold_cot":     macro_gold_cot,
+            "silver_cot":   macro_silver_cot,
+            "copper_cot":   macro_copper_cot,
+            "oil_cot":      macro_oil_cot,
+            "gs_ratio":     macro_gs,
+        }, index=common_idx)
+        weekly_ret_for_ic = weekly_prices.reindex(columns=ASSETS).pct_change()
+        fund = compute_ic_fund(factor_matrix, weekly_ret_for_ic, ic_window)
     else:
         fund = pd.DataFrame(index=common_idx, columns=ASSETS, dtype=float)
         fund["黄金"] = (
@@ -195,7 +252,7 @@ def build_signal_panel_custom(
     )
 
 
-def run_model(prices, facts, fw, cost_bps, mom_w, mom_lb, mom_weights, use_ivw=False, ivw_weeks=12, cash_threshold=-99.0, top_n_free=5, market_cash_threshold=-99.0, market_full_threshold=-99.0, max_position_ratio=1.0, fund_override=None, trend_filter_weeks=0):
+def run_model(prices, facts, fw, cost_bps, mom_w, mom_lb, mom_weights, use_ivw=False, ivw_weeks=12, cash_threshold=-99.0, top_n_free=5, market_cash_threshold=-99.0, market_full_threshold=-99.0, max_position_ratio=1.0, fund_override=None, trend_filter_weeks=0, use_ic_fund=False, ic_window=52):
     cfg = BacktestConfig(
         cost_bps=cost_bps,
         momentum_lookback_weeks=mom_lb,
@@ -217,7 +274,8 @@ def run_model(prices, facts, fw, cost_bps, mom_w, mom_lb, mom_weights, use_ivw=F
     cfg.max_weight_per_asset = 1.0
     cfg.max_weight_per_sector = 1.0
     cfg.max_turnover = 2.0
-    panel = build_signal_panel_custom(prices, facts, cfg, fw, fund_override=fund_override)
+    panel = build_signal_panel_custom(prices, facts, cfg, fw, fund_override=fund_override,
+                                      use_ic_fund=use_ic_fund, ic_window=ic_window)
     weights, strategy_ret = run_backtest(panel, cfg)
     nav = (1.0 + strategy_ret.fillna(0.0)).cumprod().rename("nav")
     return weights, strategy_ret, nav
@@ -315,8 +373,14 @@ with st.sidebar:
                                    help="低于此分数的品种直接排除；高于的品种全部配置（softmax加权）")
     if use_ivw:
         ivw_weeks = st.slider("波动率回溯周数", 4, 52, 12, 1, help="计算反波动率加权所用的滚动波动率窗口")
-    use_ml_fund = st.checkbox("ML基本面权重", value=False,
+    use_ml_fund = st.checkbox("ML基本面权重（Ridge）", value=False,
                               help="用机器学习（Ridge回归）从数据自动学习各宏观因子的权重，替代手写规则。首次启用需约1分钟计算。")
+    use_ic_fund = st.checkbox("IC动态基本面权重", value=False,
+                              help="按各因子与下周收益的滚动相关系数（IC）动态加权，IC高的因子自动多用，IC低的自动少用。首次启用需约20秒。")
+    ic_window = 52
+    if use_ic_fund:
+        ic_window = st.slider("IC回溯窗口（周）", 26, 156, 52, 13,
+                              help="计算滚动IC所用的历史窗口，越大越稳定但适应性越低")
     mom_weight = st.slider("动量权重", 0.0, 1.0, 0.6, 0.05,
                            help="基本面权重 = 1 - 动量权重")
     st.caption(f"→ 动量 {mom_weight:.0%}  /  基本面 {1-mom_weight:.0%}")
@@ -430,6 +494,8 @@ if "result" not in st.session_state or run_btn:
             market_cash_threshold, market_full_threshold, max_position_ratio,
             fund_override=ml_fund,
             trend_filter_weeks=trend_filter_weeks,
+            use_ic_fund=use_ic_fund and ml_fund is None,
+            ic_window=ic_window,
         )
     st.session_state.result = (weights, strategy_ret, nav)
 
