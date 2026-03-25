@@ -81,6 +81,7 @@ class BacktestConfig:
     market_full_threshold: float = -99.0  # 等权动量高于此值时仓位为100%；两值之间线性插值
     max_position_ratio: float = 1.0       # 整体仓位上限（0~1），剩余部分为现金
     top_n_free: int = 5                   # 无约束模式下最多持仓品种数
+    trend_filter_weeks: int = 0           # 单品种趋势过滤回溯周数（0=禁用）：自身动量为负则排除
 
 
 def parse_args() -> argparse.Namespace:
@@ -350,6 +351,13 @@ def build_signal_panel(weekly_prices: pd.DataFrame, factors: Dict[str, pd.Series
     # 12周滚动年化波动率（用于反波动率加权）
     vol_12w = weekly_ret.reindex(columns=ASSETS).rolling(cfg.ivw_weeks).std() * np.sqrt(52)
 
+    # 单品种趋势过滤动量（独立于综合动量信号）
+    trend_mom = (
+        weekly_prices.pct_change(cfg.trend_filter_weeks).reindex(columns=ASSETS)
+        if cfg.trend_filter_weeks > 0
+        else pd.DataFrame(np.nan, index=weekly_prices.index, columns=ASSETS)
+    )
+
     panel = pd.concat(
         {
             "price": weekly_prices.reindex(columns=ASSETS),
@@ -358,6 +366,7 @@ def build_signal_panel(weekly_prices: pd.DataFrame, factors: Dict[str, pd.Series
             "fund_raw": fund.reindex(columns=ASSETS),
             "score": score.reindex(columns=ASSETS),
             "vol_12w": vol_12w,
+            "trend_mom": trend_mom,
         },
         axis=1,
     )
@@ -431,10 +440,12 @@ def run_backtest(signal_panel: pd.DataFrame, cfg: BacktestConfig) -> Tuple[pd.Da
     score = signal_panel["score"].copy()
     rets = signal_panel["weekly_ret"].copy()
     vol = signal_panel["vol_12w"].copy()
+    trend_mom = signal_panel["trend_mom"].copy()
     ew_mom = signal_panel["mom_raw"].mean(axis=1)  # 等权动量，用于大势空仓
     score = score[score.index >= pd.Timestamp(cfg.start_date)]
     rets = rets.reindex(score.index)
     vol = vol.reindex(score.index)
+    trend_mom = trend_mom.reindex(score.index)
     ew_mom = ew_mom.reindex(score.index).fillna(0.0)
 
     weight_rows = []
@@ -456,6 +467,11 @@ def run_backtest(signal_panel: pd.DataFrame, cfg: BacktestConfig) -> Tuple[pd.Da
         else:
             pos_ratio = 1.0
         pos_ratio = min(pos_ratio, cfg.max_position_ratio)
+
+        # 单品种趋势过滤：自身N周动量为负的资产评分置NaN，不参与选股
+        if cfg.trend_filter_weeks > 0:
+            tm = trend_mom.loc[dt].reindex(ASSETS)
+            sc = sc.where(tm >= 0, other=np.nan)
 
         if pos_ratio == 0.0:
             target = pd.Series(0.0, index=ASSETS)

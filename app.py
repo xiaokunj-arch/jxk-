@@ -175,6 +175,12 @@ def build_signal_panel_custom(
 
     vol_12w = weekly_ret.reindex(columns=ASSETS).rolling(cfg.ivw_weeks).std() * np.sqrt(52)
 
+    trend_mom = (
+        weekly_prices.pct_change(cfg.trend_filter_weeks).reindex(columns=ASSETS)
+        if cfg.trend_filter_weeks > 0
+        else pd.DataFrame(np.nan, index=weekly_prices.index, columns=ASSETS)
+    )
+
     return pd.concat(
         {
             "price": weekly_prices.reindex(columns=ASSETS),
@@ -183,12 +189,13 @@ def build_signal_panel_custom(
             "fund_raw": fund.reindex(columns=ASSETS),
             "score": score.reindex(columns=ASSETS),
             "vol_12w": vol_12w,
+            "trend_mom": trend_mom,
         },
         axis=1,
     )
 
 
-def run_model(prices, facts, fw, cost_bps, mom_w, mom_lb, mom_weights, use_ivw=False, ivw_weeks=12, cash_threshold=-99.0, top_n_free=5, market_cash_threshold=-99.0, market_full_threshold=-99.0, max_position_ratio=1.0, fund_override=None):
+def run_model(prices, facts, fw, cost_bps, mom_w, mom_lb, mom_weights, use_ivw=False, ivw_weeks=12, cash_threshold=-99.0, top_n_free=5, market_cash_threshold=-99.0, market_full_threshold=-99.0, max_position_ratio=1.0, fund_override=None, trend_filter_weeks=0):
     cfg = BacktestConfig(
         cost_bps=cost_bps,
         momentum_lookback_weeks=mom_lb,
@@ -205,6 +212,7 @@ def run_model(prices, facts, fw, cost_bps, mom_w, mom_lb, mom_weights, use_ivw=F
         market_cash_threshold=market_cash_threshold,
         market_full_threshold=market_full_threshold,
         max_position_ratio=max_position_ratio,
+        trend_filter_weeks=trend_filter_weeks,
     )
     cfg.max_weight_per_asset = 1.0
     cfg.max_weight_per_sector = 1.0
@@ -294,6 +302,11 @@ with st.sidebar:
                                           help="5品种等权平均动量高于此值时按模型满仓；两线之间按比例持仓（半仓过渡）")
     max_position_ratio = st.slider("整体仓位上限", 0.1, 1.0, 1.0, 0.05,
                                    help="模型最多投入的总仓位比例。例如设0.5则模型最多半仓，无论动量如何")
+    use_trend_filter = st.checkbox("启用趋势过滤", value=False, help="单品种自身动量为负时不持有，只做上升趋势的资产；可与空仓叠加使用")
+    trend_filter_weeks = 0
+    if use_trend_filter:
+        trend_filter_weeks = st.slider("趋势过滤回溯周数", 4, 52, 12, 1,
+                                       help="若资产过去N周收益为负则排除，不参与当周选股")
     use_cash = st.checkbox("启用低分过滤", value=False, help="单品种综合得分低于阈值时不配置；高于阈值的品种全部配置；全部低于阈值时完全空仓")
     cash_threshold = -99.0
     top_n_free = 5
@@ -416,6 +429,7 @@ if "result" not in st.session_state or run_btn:
             use_ivw, ivw_weeks if use_ivw else 12, cash_threshold, top_n_free,
             market_cash_threshold, market_full_threshold, max_position_ratio,
             fund_override=ml_fund,
+            trend_filter_weeks=trend_filter_weeks,
         )
     st.session_state.result = (weights, strategy_ret, nav)
 
