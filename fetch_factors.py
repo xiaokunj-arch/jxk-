@@ -34,9 +34,18 @@ FRED_CONFIGS = [
 def download_fred(series_id: str, col_name: str) -> pd.DataFrame | None:
     url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}"
     try:
-        resp = requests.get(url, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
-        resp.raise_for_status()
-        df = pd.read_csv(StringIO(resp.text))
+        # 优先用系统 curl（requests 对 FRED 有时超时）
+        import subprocess
+        result = subprocess.run(
+            ["curl", "-s", "--max-time", "30", url],
+            capture_output=True, text=True
+        )
+        text = result.stdout if result.returncode == 0 and result.stdout.startswith("observation") else None
+        if text is None:
+            resp = requests.get(url, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
+            resp.raise_for_status()
+            text = resp.text
+        df = pd.read_csv(StringIO(text))
         df.columns = ["日期", col_name]
         df["日期"] = pd.to_datetime(df["日期"])
         df = df[df["日期"] >= START].copy()
