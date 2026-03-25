@@ -159,7 +159,21 @@ def build_signal_panel_custom(
     gs_ma52 = gs_ratio.rolling(52, min_periods=26).mean()
     macro_gs = (gs_ratio / gs_ma52 - 1).replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
-    if fund_override is not None:
+    if fund_override is not None and use_ic_fund:
+        # 两者都启用：分别计算后取平均（集成）
+        ml = fund_override.reindex(index=common_idx, columns=ASSETS).fillna(0.0)
+        factor_matrix = pd.DataFrame({
+            "real_rate": macro_real, "dxy_pos": macro_dxy_pos, "dxy_neg": macro_dxy,
+            "vix_pos": macro_vix_pos, "vix_neg": macro_vix, "pmi": macro_pmi,
+            "ppi": macro_ppi, "cn_pmi": macro_cn_pmi, "cn_pmi_inv": macro_cn_pmi_inv,
+            "cn_ppi": macro_cn_ppi, "fxi": macro_fxi, "fxi_inv": copper_fxi_inv,
+            "ttf": macro_ttf, "gold_oi": gold_oi_chg, "silver_oi": silver_oi_chg_inv,
+            "gold_cot": macro_gold_cot, "silver_cot": macro_silver_cot,
+            "copper_cot": macro_copper_cot, "oil_cot": macro_oil_cot, "gs_ratio": macro_gs,
+        }, index=common_idx)
+        ic = compute_ic_fund(factor_matrix, weekly_prices.reindex(columns=ASSETS).pct_change(), ic_window)
+        fund = (ml + ic) / 2.0
+    elif fund_override is not None:
         fund = fund_override.reindex(index=common_idx, columns=ASSETS).fillna(0.0)
     elif use_ic_fund:
         # IC动态加权：把所有因子打包，滚动计算每个(因子,资产)对的IC，IC作为权重
@@ -494,7 +508,7 @@ if "result" not in st.session_state or run_btn:
             market_cash_threshold, market_full_threshold, max_position_ratio,
             fund_override=ml_fund,
             trend_filter_weeks=trend_filter_weeks,
-            use_ic_fund=use_ic_fund and ml_fund is None,
+            use_ic_fund=use_ic_fund,
             ic_window=ic_window,
         )
     st.session_state.result = (weights, strategy_ret, nav)
