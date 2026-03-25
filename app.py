@@ -387,10 +387,8 @@ with st.sidebar:
                                    help="低于此分数的品种直接排除；高于的品种全部配置（softmax加权）")
     if use_ivw:
         ivw_weeks = st.slider("波动率回溯周数", 4, 52, 12, 1, help="计算反波动率加权所用的滚动波动率窗口")
-    use_ml_fund = st.checkbox("ML基本面权重（Ridge）", value=False,
-                              help="用机器学习（Ridge回归）从数据自动学习各宏观因子的权重，替代手写规则。首次启用需约1分钟计算。")
-    use_ic_fund = st.checkbox("IC动态基本面权重", value=False,
-                              help="按各因子与下周收益的滚动相关系数（IC）动态加权，IC高的因子自动多用，IC低的自动少用。首次启用需约20秒。")
+    use_ml_fund = st.checkbox("ML基本面权重（Ridge）", value=False)
+    use_ic_fund = st.checkbox("IC动态基本面权重", value=False)
     ic_window = 52
     if use_ic_fund:
         ic_window = st.slider("IC回溯窗口（周）", 26, 156, 52, 13,
