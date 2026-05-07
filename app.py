@@ -751,21 +751,26 @@ st.divider()
 st.subheader("📋 宏观周期 Regime 分析报告")
 
 from pathlib import Path
-import subprocess
 import streamlit.components.v1 as components
+import generate_regime_report as _grr
 
 _report_path = Path(__file__).parent / "regime_report.html"
+
+def _build_report():
+    import os
+    os.chdir(Path(__file__).parent)
+    _grr.main()
 
 col_r1, col_r2 = st.columns([1, 6])
 with col_r1:
     if st.button("🔄 重新生成报告"):
         with st.spinner("生成中..."):
-            subprocess.run(["python3", "generate_regime_report.py"], check=True)
+            _build_report()
         st.rerun()
 
 if not _report_path.exists():
     with st.spinner("首次生成报告..."):
-        subprocess.run(["python3", "generate_regime_report.py"], check=True)
+        _build_report()
     st.rerun()
 
 _html = _report_path.read_text(encoding="utf-8")

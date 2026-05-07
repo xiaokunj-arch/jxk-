@@ -8,8 +8,9 @@ from pathlib import Path
 
 import pandas as pd
 
-OUT_DIR  = Path("regime_outputs")
-HTML_OUT = Path("regime_report.html")
+_BASE    = Path(__file__).parent
+OUT_DIR  = _BASE / "regime_outputs"
+HTML_OUT = _BASE / "regime_report.html"
 
 CLUSTER_CONFIG = {
     0: dict(name="工业金属/能源牛市", position=0.85, mom_weight=0.55, color="#1e8449"),
