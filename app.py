@@ -51,6 +51,12 @@ def load_data():
     return prices, factors
 
 
+@st.cache_data(show_spinner="识别宏观周期Cluster（约需10秒）...")
+def compute_regime(_prices, _factors):
+    from regime_tracker import get_regime_series
+    return get_regime_series(_factors, _prices)
+
+
 @st.cache_data(show_spinner="ML学习基本面因子权重（首次运行约1分钟）...")
 def compute_ml_fund(_prices, _factors, min_train_weeks=104):
     return build_ml_fund_scores(_prices, _factors, min_train_weeks)
@@ -103,6 +109,7 @@ def build_signal_panel_custom(
     fund_override: pd.DataFrame | None = None,
     use_ic_fund: bool = False,
     ic_window: int = 52,
+    regime_config: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     weekly_ret = weekly_prices.pct_change()
     mom_short  = weekly_prices.pct_change(cfg.mom_short_weeks)
@@ -115,11 +122,25 @@ def build_signal_panel_custom(
     )
     common_idx = weekly_prices.index
 
-    def aligned_change(key: str, periods: int = 4) -> pd.Series:
+    def _chg_periods(key: str) -> int:
+        """
+        与后端回测保持一致：按因子频率设变化窗口（周频视角）。
+        - 月频宏观：1周变化捕捉发布跳变
+        - 周频库存/持仓：1周变化
+        - 日频金融（已聚合到周）：4周变化平滑噪声
+        """
+        monthly_like = {"pmi", "ppi", "cn_pmi", "cn_ppi", "real_rate", "credit_impulse"}
+        weekly_like = {"gold_oi", "silver_oi", "copper_inventory", "oil_inventory", "coal_inventory"}
+        if key in monthly_like or key in weekly_like:
+            return 1
+        return 4
+
+    def aligned_change(key: str, periods: int | None = None) -> pd.Series:
         s = factors.get(key, pd.Series(dtype=float))
         if s.empty:
             return pd.Series(0.0, index=common_idx)
         s2 = s.reindex(common_idx).ffill()
+        periods = int(_chg_periods(key) if periods is None else periods)
         return s2.pct_change(periods).replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
     def aligned_zscore(key: str, window: int = 52) -> pd.Series:
@@ -133,21 +154,21 @@ def build_signal_panel_custom(
         return z.fillna(0.0)
 
     # 正向因子
-    macro_pmi = aligned_change("pmi", 4)
-    macro_ppi = aligned_change("ppi", 4)
-    macro_ttf = aligned_change("ttf", 4)
-    macro_fxi = aligned_change("fxi", 4)
-    macro_cn_pmi = aligned_change("cn_pmi", 4)
-    macro_cn_ppi = aligned_change("cn_ppi", 4)
+    macro_pmi = aligned_change("pmi")
+    macro_ppi = aligned_change("ppi")
+    macro_ttf = aligned_change("ttf")
+    macro_fxi = aligned_change("fxi")
+    macro_cn_pmi = aligned_change("cn_pmi")
+    macro_cn_ppi = aligned_change("cn_ppi")
     # 反向因子：统一取反，正值=看涨信号
-    macro_real          = -aligned_change("real_rate", 4)
-    macro_dxy           = -aligned_change("dxy",       4)   # 美元↑→大宗承压（铜/原油用）
-    macro_dxy_pos       =  aligned_change("dxy",       4)   # 美元↑→正向（ML：黄金/白银正相关）
-    macro_vix           = -aligned_change("vix",       4)   # VIX↑→风险偏好↓（原油用）
-    macro_vix_pos       =  aligned_change("vix",       4)   # VIX↑→正向（ML：黄金避险正相关）
-    macro_cn_pmi_inv    = -aligned_change("cn_pmi",    4)   # 中国PMI↑→承压（ML：煤炭负相关）
-    gold_oi_chg         = -aligned_change("gold_oi",   4)  # 黄金持仓↑→空头增加，承压
-    silver_oi_chg_inv   = -aligned_change("silver_oi", 4)  # 白银持仓↑→空头增加，承压
+    macro_real          = -aligned_change("real_rate")
+    macro_dxy           = -aligned_change("dxy")       # 美元↑→大宗承压（铜/原油用）
+    macro_dxy_pos       =  aligned_change("dxy")       # 美元↑→正向（ML：黄金/白银正相关）
+    macro_vix           = -aligned_change("vix")       # VIX↑→风险偏好↓（原油用）
+    macro_vix_pos       =  aligned_change("vix")       # VIX↑→正向（ML：黄金避险正相关）
+    macro_cn_pmi_inv    = -aligned_change("cn_pmi")    # 中国PMI↑→承压（ML：煤炭负相关）
+    gold_oi_chg         = -aligned_change("gold_oi")   # 黄金持仓↑→空头增加，承压
+    silver_oi_chg_inv   = -aligned_change("silver_oi")  # 白银持仓↑→空头增加，承压
     copper_fxi_inv      = -macro_fxi                        # FXI对铜价IC为负（煤炭保留正向）
     # COT管理资金净头寸（滚动z-score水平位置，IC为负的取反：过度拥挤时价格反转）
     macro_gold_cot   =  aligned_zscore("gold_cot",   52)   # 正向
@@ -158,6 +179,11 @@ def build_signal_panel_custom(
     gs_ratio = (weekly_prices["黄金"] / weekly_prices["白银"]).replace([np.inf, -np.inf], np.nan)
     gs_ma52 = gs_ratio.rolling(52, min_periods=26).mean()
     macro_gs = (gs_ratio / gs_ma52 - 1).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+    # 新增因子（让IC/ML自动学习方向）
+    macro_us10y          = aligned_change("us10y")
+    macro_yield_spread   = aligned_change("yield_spread")
+    macro_credit_impulse = aligned_change("credit_impulse")
 
     if fund_override is not None and use_ic_fund:
         # 两者都启用：分别计算后取平均（集成）
@@ -170,6 +196,8 @@ def build_signal_panel_custom(
             "ttf": macro_ttf, "gold_oi": gold_oi_chg, "silver_oi": silver_oi_chg_inv,
             "gold_cot": macro_gold_cot, "silver_cot": macro_silver_cot,
             "copper_cot": macro_copper_cot, "oil_cot": macro_oil_cot, "gs_ratio": macro_gs,
+            "us10y": macro_us10y, "yield_spread": macro_yield_spread,
+            "credit_impulse": macro_credit_impulse,
         }, index=common_idx)
         ic = compute_ic_fund(factor_matrix, weekly_prices.reindex(columns=ASSETS).pct_change(), ic_window)
         fund = (ml + ic) / 2.0
@@ -241,7 +269,14 @@ def build_signal_panel_custom(
     fund_ts_std = fund_reindexed.rolling(52, min_periods=26).std()
     fund_normalized = fund_reindexed.div(fund_ts_std).fillna(0.0)
     fund_z = zscore_row(fund_normalized)
-    score = cfg.score_momentum_weight * mom_z + cfg.score_fundamental_weight * fund_z
+
+    # Regime 动态权重：按 Cluster 逐行调整动量/IC 权重
+    if regime_config is not None:
+        mw = regime_config["mom_weight"].reindex(common_idx).ffill().fillna(cfg.score_momentum_weight)
+        fw_r = regime_config["ic_weight"].reindex(common_idx).ffill().fillna(cfg.score_fundamental_weight)
+        score = mom_z.mul(mw, axis=0) + fund_z.mul(fw_r, axis=0)
+    else:
+        score = cfg.score_momentum_weight * mom_z + cfg.score_fundamental_weight * fund_z
     score = score.where(weekly_ret.notna(), np.nan)
 
     vol_12w = weekly_ret.reindex(columns=ASSETS).rolling(cfg.ivw_weeks).std() * np.sqrt(52)
@@ -266,7 +301,7 @@ def build_signal_panel_custom(
     )
 
 
-def run_model(prices, facts, fw, cost_bps, mom_w, mom_lb, mom_weights, use_ivw=False, ivw_weeks=12, cash_threshold=-99.0, top_n_free=5, market_cash_threshold=-99.0, market_full_threshold=-99.0, max_position_ratio=1.0, fund_override=None, trend_filter_weeks=0, use_ic_fund=False, ic_window=52):
+def run_model(prices, facts, fw, cost_bps, mom_w, mom_lb, mom_weights, use_ivw=False, ivw_weeks=12, cash_threshold=-99.0, top_n_free=5, market_cash_threshold=-99.0, market_full_threshold=-99.0, max_position_ratio=1.0, fund_override=None, trend_filter_weeks=0, use_ic_fund=False, ic_window=52, regime_config=None):
     cfg = BacktestConfig(
         cost_bps=cost_bps,
         momentum_lookback_weeks=mom_lb,
@@ -288,8 +323,12 @@ def run_model(prices, facts, fw, cost_bps, mom_w, mom_lb, mom_weights, use_ivw=F
     cfg.max_weight_per_asset = 1.0
     cfg.max_weight_per_sector = 1.0
     cfg.max_turnover = 2.0
+    if regime_config is not None:
+        cfg.regime_pos_series     = regime_config["position"]
+        cfg.regime_cluster_series = regime_config["cluster"]
     panel = build_signal_panel_custom(prices, facts, cfg, fw, fund_override=fund_override,
-                                      use_ic_fund=use_ic_fund, ic_window=ic_window)
+                                      use_ic_fund=use_ic_fund, ic_window=ic_window,
+                                      regime_config=regime_config)
     weights, strategy_ret = run_backtest(panel, cfg)
     nav = (1.0 + strategy_ret.fillna(0.0)).cumprod().rename("nav")
     return weights, strategy_ret, nav
@@ -393,6 +432,15 @@ with st.sidebar:
     if use_ic_fund:
         ic_window = st.slider("IC回溯窗口（周）", 26, 156, 52, 13,
                               help="计算滚动IC所用的历史窗口，越大越稳定但适应性越低")
+    use_regime = st.checkbox("启用Regime仓位控制（KMeans周期识别）", value=False,
+                             help="基于PCA+KMeans识别宏观周期(6类)，自动调整总仓位和动量/IC权重比例")
+    regime_df = None
+    if use_regime:
+        regime_df = compute_regime(weekly_prices, factors)
+        cur_cluster = int(regime_df["cluster"].iloc[-1])
+        cur_name = regime_df["name"].iloc[-1]
+        cur_pos = regime_df["position"].iloc[-1]
+        st.info(f"当前Cluster: C{cur_cluster} {cur_name}｜基准仓位: {cur_pos:.0%}")
     mom_weight = st.slider("动量权重", 0.0, 1.0, 0.6, 0.05,
                            help="基本面权重 = 1 - 动量权重")
     st.caption(f"→ 动量 {mom_weight:.0%}  /  基本面 {1-mom_weight:.0%}")
@@ -508,6 +556,7 @@ if "result" not in st.session_state or run_btn:
             trend_filter_weeks=trend_filter_weeks,
             use_ic_fund=use_ic_fund,
             ic_window=ic_window,
+            regime_config=regime_df,
         )
     st.session_state.result = (weights, strategy_ret, nav)
 
@@ -638,39 +687,86 @@ with st.expander("分时段绩效"):
         ("近1年",    last_dt - pd.DateOffset(years=1)),
         ("全样本",   strategy_ret.index.min()),
     ]
-    # 近1个月、近3个月显示区间累计收益，避免年化放大失真
     SHORT_LABELS = {"近1个月", "近3个月"}
+
+    def fmt_pct(v): return f"{v:.1%}" if not (isinstance(v, float) and math.isnan(v)) else "N/A"
+    def fmt_f(v):   return f"{v:.2f}" if not (isinstance(v, float) and math.isnan(v)) else "N/A"
+
     rows = []
     for label, since in periods:
         subset = strategy_ret[strategy_ret.index >= since]
-        p = calc_perf(subset)
+        bm_sub = bm_ret[bm_ret.index >= since]
+        p  = calc_perf(subset)
+        pb = calc_perf(bm_sub)
         weeks = int(p["weeks"])
         if label in SHORT_LABELS:
-            cum_ret = float((1 + subset.fillna(0)).prod() - 1)
-            def fmt_f(v): return f"{v:.2f}" if not (isinstance(v, float) and math.isnan(v)) else "N/A"
+            cum_ret    = float((1 + subset.fillna(0)).prod() - 1)
+            cum_ret_bm = float((1 + bm_sub.fillna(0)).prod() - 1)
             row = {
                 "时段": label,
-                "收益（累计）": f"{cum_ret:.1%}",
-                "年化波动": f"{p['ann_vol']:.1%}" if not math.isnan(p['ann_vol']) else "N/A",
-                "Sharpe": fmt_f(p["sharpe"]),
-                "最大回撤": f"{p['max_drawdown']:.1%}" if not math.isnan(p['max_drawdown']) else "N/A",
-                "Calmar": "N/A",
-                "胜率": f"{p['win_rate']:.1%}" if not math.isnan(p['win_rate']) else "N/A",
-                "周数": str(weeks),
+                "策略收益": f"{cum_ret:.1%}（累计）",
+                "基准收益": f"{cum_ret_bm:.1%}（累计）",
+                "超额":     f"{cum_ret - cum_ret_bm:+.1%}",
+                "Sharpe":   fmt_f(p["sharpe"]),
+                "最大回撤": fmt_pct(p["max_drawdown"]),
+                "胜率":     fmt_pct(p["win_rate"]),
             }
         else:
-            def fmt_pct(v): return f"{v:.1%}" if not (isinstance(v, float) and math.isnan(v)) else "N/A"
-            def fmt_f(v):   return f"{v:.2f}" if not (isinstance(v, float) and math.isnan(v)) else "N/A"
             row = {
                 "时段": label,
-                "收益（累计）": f"{p['ann_return']:.1%}（年化）",
-                "年化波动": fmt_pct(p["ann_vol"]),
-                "Sharpe": fmt_f(p["sharpe"]),
+                "策略收益": f"{p['ann_return']:.1%}（年化）",
+                "基准收益": f"{pb['ann_return']:.1%}（年化）",
+                "超额":     f"{p['ann_return'] - pb['ann_return']:+.1%}",
+                "Sharpe":   fmt_f(p["sharpe"]),
                 "最大回撤": fmt_pct(p["max_drawdown"]),
-                "Calmar": fmt_f(p["calmar"]),
-                "胜率": fmt_pct(p["win_rate"]),
-                "周数": str(weeks),
+                "胜率":     fmt_pct(p["win_rate"]),
             }
         rows.append(row)
+
+    # 逐年绩效
+    all_years = sorted(strategy_ret.index.year.unique())
+    for yr in all_years:
+        s_yr = strategy_ret[strategy_ret.index.year == yr]
+        b_yr = bm_ret[bm_ret.index.year == yr]
+        cum  = float((1 + s_yr.fillna(0)).prod() - 1)
+        bm_c = float((1 + b_yr.fillna(0)).prod() - 1)
+        p_yr = calc_perf(s_yr)
+        rows.append({
+            "时段":     str(yr),
+            "策略收益": f"{cum:.1%}",
+            "基准收益": f"{bm_c:.1%}",
+            "超额":     f"{cum - bm_c:+.1%}",
+            "Sharpe":   fmt_f(p_yr["sharpe"]),
+            "最大回撤": fmt_pct(p_yr["max_drawdown"]),
+            "胜率":     fmt_pct(p_yr["win_rate"]),
+        })
+
     perf_tbl = pd.DataFrame(rows)
     st.dataframe(perf_tbl, hide_index=True, use_container_width=True)
+
+# ─────────────────────────────────────────────
+# 宏观周期 Regime 分析报告
+# ─────────────────────────────────────────────
+st.divider()
+st.subheader("📋 宏观周期 Regime 分析报告")
+
+from pathlib import Path
+import subprocess
+import streamlit.components.v1 as components
+
+_report_path = Path(__file__).parent / "regime_report.html"
+
+col_r1, col_r2 = st.columns([1, 6])
+with col_r1:
+    if st.button("🔄 重新生成报告"):
+        with st.spinner("生成中..."):
+            subprocess.run(["python3", "generate_regime_report.py"], check=True)
+        st.rerun()
+
+if not _report_path.exists():
+    with st.spinner("首次生成报告..."):
+        subprocess.run(["python3", "generate_regime_report.py"], check=True)
+    st.rerun()
+
+_html = _report_path.read_text(encoding="utf-8")
+components.html(_html, height=900, scrolling=True)

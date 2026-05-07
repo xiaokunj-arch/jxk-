@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-从免费数据源自动下载宏观/价格因子，写入 大宗商品轮动_数据.xlsx
+从免费数据源自动下载宏观/价格因子，写入 大宗商品轮动_数据2.xlsx
 数据来源：
   FRED   - 实际利率 / 美元指数
   EIA    - 美国商业原油库存（解析官网 HTML）
@@ -215,48 +215,136 @@ def main():
             failed.append(sheet_name)
         time.sleep(0.3)
 
-    # ── 动力煤期货价格（郑商所 ZC 主力合约）──
-    print("\n【动力煤期货价格（郑商所）】")
-    print("  ↓ 煤炭期货价格（期货价格表第9/10列）...", end=" ", flush=True)
-    if not HAS_AKSHARE:
-        print("❌ 需先安装 akshare: pip install akshare")
-    else:
+    # ── 美债收益率（FRED：10年期、2年期名义收益率 + 10Y-2Y利差）──
+    print("\n【美债收益率】")
+    try:
+        treasury_series = [
+            ("DGS10", "美国10年期国债收益率(%)"),
+            ("DGS2",  "美国2年期国债收益率(%)"),
+            ("T10Y2Y","美国10Y-2Y利差(%)"),
+        ]
+        dfs_t = []
+        for sid, col in treasury_series:
+            df_t = download_fred(sid, col)
+            if df_t is not None and not df_t.empty:
+                dfs_t.append(df_t.set_index("日期"))
+        if dfs_t:
+            merged_t = pd.concat(dfs_t, axis=1).reset_index().sort_values("日期")
+            write_sheet(wb, "美债收益率", merged_t)
+            print(f"✅ {len(merged_t)} 行，最新: {merged_t['日期'].iloc[-1].date()}")
+            results.append("美债收益率")
+        else:
+            print("❌ 所有序列均失败")
+            failed.append("美债收益率")
+    except Exception as e:
+        print(f"❌ {e}")
+        failed.append("美债收益率")
+
+    # ── 中国制造业PMI + 中国PPI（akshare）──
+    if HAS_AKSHARE:
+        print("\n【中国宏观数据（akshare）】")
+
+        # 中国制造业PMI
+        print("  ↓ 中国制造业PMI...", end=" ", flush=True)
         try:
-            ws_px = wb["期货价格"]
-            rows_px = list(ws_px.iter_rows(values_only=True))
-            coal_dates = {pd.Timestamp(r[8]).date() for r in rows_px[1:]
-                          if r and r[8] is not None and r[9] is not None}
-            last_coal = max(coal_dates) if coal_dates else datetime(2013,1,1).date()
-            dates_to_fetch = [d for d in pd.bdate_range(str(last_coal), datetime.today().strftime("%Y-%m-%d"))
-                              if d.date() > last_coal]
-            new_coal = {}
-            for dt in dates_to_fetch:
-                try:
-                    df_zc = ak.get_czce_daily(date=dt.strftime("%Y%m%d"))
-                    zc = df_zc[df_zc["variety"] == "ZC"].copy()
-                    if zc.empty:
-                        continue
-                    zc["open_interest"] = pd.to_numeric(zc["open_interest"], errors="coerce")
-                    zc["settle"] = pd.to_numeric(zc["settle"], errors="coerce")
-                    val = float(zc.loc[zc["open_interest"].idxmax(), "settle"])
-                    if val > 0:
-                        new_coal[dt.date()] = val
-                    time.sleep(0.3)
-                except Exception:
-                    pass
-            if new_coal:
-                last_row = max((i for i in range(2, ws_px.max_row + 1)
-                                if ws_px.cell(i, 9).value is not None), default=1)
-                for i, (dt, price) in enumerate(sorted(new_coal.items()), 1):
-                    ws_px.cell(last_row + i, 9, dt)
-                    ws_px.cell(last_row + i, 10, price)
-                print(f"✅ 新增 {len(new_coal)} 行，最新: {max(new_coal.keys())}")
-                results.append("煤炭期货价格")
-            else:
-                print("已是最新")
+            df_pmi = ak.macro_china_pmi_yearly()
+            df_pmi = df_pmi[["日期", "今值"]].copy()
+            df_pmi.columns = ["日期", "中国官方制造业PMI"]
+            df_pmi["日期"] = pd.to_datetime(df_pmi["日期"])
+            df_pmi["中国官方制造业PMI"] = pd.to_numeric(df_pmi["中国官方制造业PMI"], errors="coerce")
+            df_pmi = df_pmi.dropna().sort_values("日期").reset_index(drop=True)
+            write_sheet(wb, "中国制造业PMI", df_pmi)
+            print(f"✅ {len(df_pmi)} 行，最新: {df_pmi['日期'].iloc[-1].date()}")
+            results.append("中国制造业PMI")
         except Exception as e:
             print(f"❌ {e}")
-            failed.append("煤炭期货价格")
+            failed.append("中国制造业PMI")
+        time.sleep(0.5)
+
+        # 中国PPI
+        print("  ↓ 中国PPI...", end=" ", flush=True)
+        try:
+            df_ppi = ak.macro_china_ppi_yearly()
+            df_ppi = df_ppi[["日期", "今值"]].copy()
+            df_ppi.columns = ["日期", "中国PPI同比(%)"]
+            df_ppi["日期"] = pd.to_datetime(df_ppi["日期"])
+            df_ppi["中国PPI同比(%)"] = pd.to_numeric(df_ppi["中国PPI同比(%)"], errors="coerce")
+            df_ppi = df_ppi.dropna().sort_values("日期").reset_index(drop=True)
+            write_sheet(wb, "中国ppi", df_ppi)
+            print(f"✅ {len(df_ppi)} 行，最新: {df_ppi['日期'].iloc[-1].date()}")
+            results.append("中国ppi")
+        except Exception as e:
+            print(f"❌ {e}")
+            failed.append("中国ppi")
+        time.sleep(0.5)
+    else:
+        print("\n⚠️ akshare 未安装，跳过中国PMI/PPI自动下载（可从 Wind 手动补充）")
+
+    # ── 焦煤期货（大商所JM主力合约，替代已停牌的郑商所ZC动力煤）──
+    print("\n【焦煤期货价格（大商所JM0）】")
+    print("  ↓ 焦煤主力合约（期货价格表第9/10列）...", end=" ", flush=True)
+    try:
+        df_jm = ak.futures_zh_daily_sina(symbol="JM0")
+        df_jm["date"] = pd.to_datetime(df_jm["date"])
+        df_jm = df_jm.sort_values("date").dropna(subset=["close"])
+
+        ws_px = wb["期货价格"]
+        ws_px.cell(1, 9, "日期")
+        ws_px.cell(1, 10, "期货收盘价(连续):大商所焦煤JM")
+        for row in ws_px.iter_rows(min_row=2, min_col=9, max_col=10):
+            for cell in row:
+                cell.value = None
+        for i, (_, row) in enumerate(df_jm.iterrows(), start=2):
+            ws_px.cell(i, 9, row["date"].date())
+            ws_px.cell(i, 10, float(row["close"]))
+        print(f"✅ {len(df_jm)} 行，最新: {df_jm['date'].iloc[-1].date()}")
+        results.append("焦煤期货(JM0)")
+    except Exception as e:
+        print(f"❌ {e}")
+        failed.append("焦煤期货(JM0)")
+
+    # ── 中国信贷脉冲（M2 + GDP 计算） ──
+    print("\n【中国信贷脉冲】")
+    try:
+        df_m2 = ak.macro_china_supply_of_money()
+        df_m2 = df_m2[["统计时间", "货币和准货币（广义货币M2）"]].copy()
+        df_m2.columns = ["date_str", "m2"]
+        df_m2["m2"] = pd.to_numeric(df_m2["m2"], errors="coerce")
+        def _parse_m2_date(s):
+            p = str(s).split(".")
+            if len(p) == 2:
+                return pd.Timestamp(year=int(p[0]), month=int(p[1]), day=1) + pd.offsets.MonthEnd(0)
+            return pd.NaT
+        df_m2["date"] = df_m2["date_str"].apply(_parse_m2_date)
+        m2 = df_m2.dropna(subset=["date"]).set_index("date").sort_index()[["m2"]]
+        m2["m2_new_12m"] = m2["m2"] - m2["m2"].shift(12)
+
+        df_gdp_raw = ak.macro_china_gdp()
+        single_q = df_gdp_raw[df_gdp_raw["季度"].str.match(r"^\d{4}年第[1-4]季度$")].copy()
+        def _parse_quarter(s):
+            year, q = int(s[:4]), int(s[6])
+            return pd.Timestamp(year=year, month=q * 3, day=1) + pd.offsets.MonthEnd(0)
+        single_q["date"] = single_q["季度"].apply(_parse_quarter)
+        gdp = single_q[["date", "国内生产总值-绝对值"]].rename(columns={"国内生产总值-绝对值": "gdp_q"})
+        gdp = gdp.sort_values("date").set_index("date").dropna()
+        gdp["gdp_annual"] = gdp["gdp_q"].rolling(4, min_periods=4).sum()
+        gdp_monthly = gdp[["gdp_annual"]].resample("ME").last().ffill()
+
+        merged = m2.join(gdp_monthly, how="left")
+        merged["gdp_annual"] = merged["gdp_annual"].ffill()
+        merged["delta_m2_new"] = merged["m2_new_12m"] - merged["m2_new_12m"].shift(12)
+        merged["credit_impulse"] = merged["delta_m2_new"] / merged["gdp_annual"] * 100
+        merged["m2_yoy"] = (m2["m2"] / m2["m2"].shift(12) - 1) * 100
+
+        result = merged[["m2", "m2_new_12m", "m2_yoy", "credit_impulse"]].dropna(subset=["credit_impulse"]).reset_index()
+        result.columns = ["日期", "M2余额(亿元)", "12个月新增M2(亿元)", "M2同比增速(%)", "中国信贷脉冲(%)"]
+
+        write_sheet(wb, "中国信贷脉冲", result)
+        print(f"✅ {len(result)} 行，最新: {result['日期'].iloc[-1].date()}")
+        results.append("中国信贷脉冲")
+    except Exception as e:
+        print(f"❌ {e}")
+        failed.append("中国信贷脉冲")
 
     wb.save(MASTER_FILE)
 

@@ -99,20 +99,34 @@ def build_ml_dataset(signal_panel: pd.DataFrame, factors: Dict[str, pd.Series]) 
     mom_raw = signal_panel["mom_raw"].copy()
     common_idx = weekly_ret.index
 
-    def factor_chg(key: str, periods: int = 4) -> pd.Series:
+    def _chg_periods(key: str) -> int:
+        """
+        与规则版保持一致：按因子频率设变化窗口（周频视角）。
+        - 月频宏观：1周变化捕捉发布跳变
+        - 周频库存/持仓：1周变化
+        - 日频金融（已聚合到周）：4周变化平滑噪声
+        """
+        monthly_like = {"pmi", "ppi", "cn_pmi", "cn_ppi", "real_rate"}
+        weekly_like = {"gold_oi", "silver_oi", "copper_inventory", "oil_inventory", "coal_inventory"}
+        if key in monthly_like or key in weekly_like:
+            return 1
+        return 4
+
+    def factor_chg(key: str, periods: int | None = None) -> pd.Series:
         s = factors.get(key, pd.Series(dtype=float))
         if s.empty:
             return pd.Series(0.0, index=common_idx)
         s2 = s.reindex(common_idx).ffill()
+        periods = int(_chg_periods(key) if periods is None else periods)
         return s2.pct_change(periods).replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
-    real_rate_chg = factor_chg("real_rate", 4)
-    dxy_chg       = factor_chg("dxy", 4)
-    pmi_chg       = factor_chg("pmi", 4)
-    gold_oi_chg   = factor_chg("gold_oi", 4)
-    silver_oi_chg = factor_chg("silver_oi", 4)
-    copper_inv_chg = factor_chg("copper_inventory", 4)
-    oil_inv_chg   = factor_chg("oil_inventory", 4)
+    real_rate_chg = factor_chg("real_rate")
+    dxy_chg       = factor_chg("dxy")
+    pmi_chg       = factor_chg("pmi")
+    gold_oi_chg   = factor_chg("gold_oi")
+    silver_oi_chg = factor_chg("silver_oi")
+    copper_inv_chg = factor_chg("copper_inventory")
+    oil_inv_chg   = factor_chg("oil_inventory")
 
     frames: List[pd.DataFrame] = []
     for asset in ASSETS:

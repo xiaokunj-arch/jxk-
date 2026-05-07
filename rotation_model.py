@@ -25,7 +25,7 @@ from sklearn.preprocessing import StandardScaler
 # =========================
 # 全局路径与静态配置
 # =========================
-WORKBOOK_PATH = Path("大宗商品轮动_数据2.xlsx")
+from config import WORKBOOK_PATH
 OUTPUT_DIR = Path("model_outputs")
 
 ASSETS = ["黄金", "白银", "铜", "原油", "煤炭"]
@@ -82,6 +82,8 @@ class BacktestConfig:
     max_position_ratio: float = 1.0       # 整体仓位上限（0~1），剩余部分为现金
     top_n_free: int = 5                   # 无约束模式下最多持仓品种数
     trend_filter_weeks: int = 0           # 单品种趋势过滤回溯周数（0=禁用）：自身动量为负则排除
+    regime_pos_series: object = None      # Regime仓位时序（pd.Series），覆盖market_cash和max_position逻辑
+    regime_cluster_series: object = None  # Regime Cluster编号时序（pd.Series），用于资产约束
 
 
 def parse_args() -> argparse.Namespace:
@@ -98,13 +100,13 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _read_two_col_sheet(path: Path, sheet_name: str) -> pd.Series:
-    """读取因子子表（默认前两列为 日期/数值），输出标准化时间序列。"""
+def _read_two_col_sheet(path: Path, sheet_name: str, value_col_idx: int = 1) -> pd.Series:
+    """读取因子子表（第0列为日期，value_col_idx列为数值），输出标准化时间序列。"""
     df = pd.read_excel(path, sheet_name=sheet_name)
     if df.empty:
         return pd.Series(dtype=float, name=sheet_name)
     date_col = df.columns[0]
-    value_col = df.columns[1]
+    value_col = df.columns[value_col_idx]
     out = df[[date_col, value_col]].copy()
     out.columns = ["date", "value"]
     out["date"] = out["date"].map(_parse_mixed_date)
@@ -191,6 +193,14 @@ def load_weekly_factors(path: Path) -> Dict[str, pd.Series]:
         "oil_cot": ["COT原油"],
     }
 
+    # 多列sheet需单独处理
+    multi_col_factors = {
+        "us10y":        ("美债收益率", 1),   # 10年期名义收益率
+        "us2y":         ("美债收益率", 2),   # 2年期名义收益率
+        "yield_spread": ("美债收益率", 3),   # 10Y-2Y利差
+        "credit_impulse": ("中国信贷脉冲", 4),  # 信贷脉冲(%)
+    }
+
     xls = pd.ExcelFile(path)
     sheets = set(xls.sheet_names)
     factors: Dict[str, pd.Series] = {}
@@ -202,6 +212,14 @@ def load_weekly_factors(path: Path) -> Dict[str, pd.Series]:
             continue
         s = _read_two_col_sheet(path, selected)
         factors[key] = _weekly_last(s)
+
+    for key, (sheet, col_idx) in multi_col_factors.items():
+        if sheet not in sheets:
+            factors[key] = pd.Series(dtype=float, name=key)
+            continue
+        s = _read_two_col_sheet(path, sheet, value_col_idx=col_idx)
+        factors[key] = _weekly_last(s)
+
     return factors
 
 
@@ -226,26 +244,43 @@ def build_ml_fund_scores(
     weekly_ret = weekly_prices.pct_change()
     common_idx = weekly_prices.index
 
-    def factor_chg(key: str, periods: int = 4) -> pd.Series:
+    def _chg_periods(key: str) -> int:
+        """
+        不同频率因子用不同变化窗口（周频视角）：
+        - 日频金融变量（已聚合到周）用 4 周变化做平滑，降低噪声
+        - 月频宏观（PMI/PPI）周频上是“阶梯函数”，用 1 周变化捕捉发布跳变
+        - 周频库存/持仓等用 1 周变化更贴近供需边际
+        """
+        monthly_like = {"pmi", "ppi", "cn_pmi", "cn_ppi", "real_rate", "credit_impulse"}
+        weekly_like = {"gold_oi", "silver_oi", "copper_inventory", "oil_inventory", "coal_inventory"}
+        if key in monthly_like or key in weekly_like:
+            return 1
+        return 4
+
+    def factor_chg(key: str, periods: int | None = None) -> pd.Series:
         s = factors.get(key, pd.Series(dtype=float))
         if s.empty:
             return pd.Series(0.0, index=common_idx)
         s2 = s.reindex(common_idx).ffill()
+        periods = int(_chg_periods(key) if periods is None else periods)
         return s2.pct_change(periods).replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
     macro_df = pd.DataFrame({
-        "real_rate":  factor_chg("real_rate", 4),
-        "dxy":        factor_chg("dxy", 4),
-        "vix":        factor_chg("vix", 4),
-        "pmi":        factor_chg("pmi", 4),
-        "cn_pmi":     factor_chg("cn_pmi", 4),
-        "cn_ppi":     factor_chg("cn_ppi", 4),
-        "gold_oi":    factor_chg("gold_oi", 4),
-        "silver_oi":  factor_chg("silver_oi", 4),
-        "copper_inv": factor_chg("copper_inventory", 4),
-        "oil_inv":    factor_chg("oil_inventory", 4),
-        "fxi":        factor_chg("fxi", 4),
-        "ttf":        factor_chg("ttf", 4),
+        "real_rate":      factor_chg("real_rate"),
+        "dxy":            factor_chg("dxy"),
+        "vix":            factor_chg("vix"),
+        "pmi":            factor_chg("pmi"),
+        "cn_pmi":         factor_chg("cn_pmi"),
+        "cn_ppi":         factor_chg("cn_ppi"),
+        "gold_oi":        factor_chg("gold_oi"),
+        "silver_oi":      factor_chg("silver_oi"),
+        "copper_inv":     factor_chg("copper_inventory"),
+        "oil_inv":        factor_chg("oil_inventory"),
+        "fxi":            factor_chg("fxi"),
+        "ttf":            factor_chg("ttf"),
+        "us10y":          factor_chg("us10y"),
+        "yield_spread":   factor_chg("yield_spread"),
+        "credit_impulse": factor_chg("credit_impulse"),
     }, index=common_idx)
 
     ew_ret = weekly_ret.reindex(columns=ASSETS).mean(axis=1)
@@ -286,12 +321,21 @@ def build_signal_panel(weekly_prices: pd.DataFrame, factors: Dict[str, pd.Series
 
     common_idx = weekly_prices.index
 
-    def aligned_change(key: str, periods: int = 4) -> pd.Series:
-        """将因子对齐到交易日历后计算变化率。"""
+    def _chg_periods(key: str) -> int:
+        """同 build_ml_fund_scores 的口径：按因子频率设变化窗口。"""
+        monthly_like = {"pmi", "ppi", "cn_pmi", "cn_ppi", "real_rate"}
+        weekly_like = {"gold_oi", "silver_oi", "copper_inventory", "oil_inventory", "coal_inventory"}
+        if key in monthly_like or key in weekly_like:
+            return 1
+        return 4
+
+    def aligned_change(key: str, periods: int | None = None) -> pd.Series:
+        """将因子对齐到交易日历后计算变化率（按因子频率自适应窗口）。"""
         s = factors.get(key, pd.Series(dtype=float))
         if s.empty:
             return pd.Series(0.0, index=common_idx)
         s2 = s.reindex(common_idx).ffill()
+        periods = int(_chg_periods(key) if periods is None else periods)
         return s2.pct_change(periods).replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
     def aligned_zscore(key: str, window: int = 52) -> pd.Series:
@@ -306,21 +350,21 @@ def build_signal_panel(weekly_prices: pd.DataFrame, factors: Dict[str, pd.Series
         return z.fillna(0.0)
 
     # 正向因子：上涨→看涨
-    macro_pmi = aligned_change("pmi", 4)
-    macro_ppi = aligned_change("ppi", 4)
-    macro_ttf = aligned_change("ttf", 4)
-    macro_fxi = aligned_change("fxi", 4)
-    macro_cn_pmi = aligned_change("cn_pmi", 4)
-    macro_cn_ppi = aligned_change("cn_ppi", 4)
+    macro_pmi = aligned_change("pmi")
+    macro_ppi = aligned_change("ppi")
+    macro_ttf = aligned_change("ttf")
+    macro_fxi = aligned_change("fxi")
+    macro_cn_pmi = aligned_change("cn_pmi")
+    macro_cn_ppi = aligned_change("cn_ppi")
     # 反向因子：上涨→看跌，统一取反使正值=看涨信号
-    macro_real         = -aligned_change("real_rate",  4)  # 实际利率↑→大宗承压
-    macro_dxy          = -aligned_change("dxy",        4)  # 美元↑→大宗承压（铜/原油用）
-    macro_dxy_pos      =  aligned_change("dxy",        4)  # 美元↑→正向（ML：黄金/白银正相关）
-    macro_vix          = -aligned_change("vix",        4)  # VIX↑→风险偏好↓（原油用）
-    macro_vix_pos      =  aligned_change("vix",        4)  # VIX↑→正向（ML：黄金避险正相关）
-    macro_cn_pmi_inv   = -aligned_change("cn_pmi",     4)  # 中国PMI↑→承压（ML：煤炭负相关）
-    macro_gold_oi_inv  = -aligned_change("gold_oi",    4)  # 黄金持仓↑→空头增加，承压
-    macro_silver_oi_inv= -aligned_change("silver_oi",  4)  # 白银持仓↑→空头增加，承压
+    macro_real         = -aligned_change("real_rate")  # 实际利率↑→大宗承压
+    macro_dxy          = -aligned_change("dxy")        # 美元↑→大宗承压（铜/原油用）
+    macro_dxy_pos      =  aligned_change("dxy")        # 美元↑→正向（ML：黄金/白银正相关）
+    macro_vix          = -aligned_change("vix")        # VIX↑→风险偏好↓（原油用）
+    macro_vix_pos      =  aligned_change("vix")        # VIX↑→正向（ML：黄金避险正相关）
+    macro_cn_pmi_inv   = -aligned_change("cn_pmi")     # 中国PMI↑→承压（ML：煤炭负相关）
+    macro_gold_oi_inv  = -aligned_change("gold_oi")    # 黄金持仓↑→空头增加，承压
+    macro_silver_oi_inv= -aligned_change("silver_oi")  # 白银持仓↑→空头增加，承压
     macro_copper_fxi_inv = -macro_fxi                       # FXI对铜价IC为负（煤炭保留正向）
     # COT管理资金净头寸（用滚动z-score水平位置，IC为负的取反：过度拥挤时价格反转）
     macro_gold_cot   =  aligned_zscore("gold_cot",   52)   # 黄金：正向
@@ -468,6 +512,15 @@ def run_backtest(signal_panel: pd.DataFrame, cfg: BacktestConfig) -> Tuple[pd.Da
             pos_ratio = 1.0
         pos_ratio = min(pos_ratio, cfg.max_position_ratio)
 
+        # Regime 仓位覆盖：若启用则直接使用 regime 的仓位比例
+        if cfg.regime_pos_series is not None:
+            try:
+                rv = float(cfg.regime_pos_series.loc[dt])
+                if not np.isnan(rv):
+                    pos_ratio = rv
+            except (KeyError, TypeError):
+                pass
+
         # 单品种趋势过滤：自身N周动量为负的资产评分置NaN，不参与选股
         if cfg.trend_filter_weeks > 0:
             tm = trend_mom.loc[dt].reindex(ASSETS)
@@ -487,6 +540,15 @@ def run_backtest(signal_panel: pd.DataFrame, cfg: BacktestConfig) -> Tuple[pd.Da
                 for c in chosen:
                     target[c] = min(eq_w, cfg.max_weight_per_asset)
             target = _cap_turnover(target, prev_w, cfg.max_turnover)
+
+        # Regime 资产约束（如 C5 黄金保底）
+        if cfg.regime_cluster_series is not None:
+            try:
+                cur_cluster = int(cfg.regime_cluster_series.loc[dt])
+                from regime_tracker import apply_asset_constraints
+                target = apply_asset_constraints(target, cur_cluster, ASSETS)
+            except (KeyError, TypeError, ImportError):
+                pass
 
         # 反波动率加权：将目标权重乘以各资产波动率倒数再归一化
         if cfg.use_ivw:
