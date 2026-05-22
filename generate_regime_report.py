@@ -13,12 +13,12 @@ OUT_DIR  = _BASE / "regime_outputs"
 HTML_OUT = _BASE / "regime_report.html"
 
 CLUSTER_CONFIG = {
-    0: dict(name="工业金属/能源牛市", position=0.85, mom_weight=0.55, color="#1e8449"),
-    1: dict(name="大宗全面牛市",     position=1.00, mom_weight=0.65, color="#27ae60"),
-    2: dict(name="停滞横盘期",       position=0.55, mom_weight=0.35, color="#d68910"),
-    3: dict(name="温和复苏期",       position=0.65, mom_weight=0.30, color="#2980b9"),
-    4: dict(name="加息紧缩期",       position=0.00, mom_weight=0.50, color="#c0392b"),
-    5: dict(name="衰退/通缩/避险",   position=0.20, mom_weight=0.20, color="#7d3c98"),
+    0: dict(name="工业金属/能源牛市", position=0.85, mom_weight=0.00, color="#1e8449"),
+    1: dict(name="大宗全面牛市",     position=1.00, mom_weight=0.05, color="#27ae60"),
+    2: dict(name="停滞横盘期",       position=0.55, mom_weight=0.30, color="#d68910"),
+    3: dict(name="温和复苏期",       position=0.65, mom_weight=0.35, color="#2980b9"),
+    4: dict(name="加息紧缩期",       position=0.00, mom_weight=0.05, color="#c0392b"),
+    5: dict(name="衰退/通缩/避险",   position=0.20, mom_weight=0.30, color="#7d3c98"),
 }
 
 FACTOR_CN = {

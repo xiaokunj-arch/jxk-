@@ -23,12 +23,12 @@ from regime_analysis import build_regime_features, PCA_FEATURES
 # position  : 该Cluster下的基准总仓位比例
 # mom_weight: 动量在综合得分中的权重（IC权重 = 1 - mom_weight）
 CLUSTER_CONFIG: dict[int, dict] = {
-    0: dict(name="工业金属/能源牛市", position=0.85, mom_weight=0.55),
-    1: dict(name="大宗全面牛市",     position=1.00, mom_weight=0.65),
-    2: dict(name="停滞横盘期",       position=0.55, mom_weight=0.35),
-    3: dict(name="温和复苏期",       position=0.65, mom_weight=0.30),
-    4: dict(name="加息紧缩期",       position=0.00, mom_weight=0.50),
-    5: dict(name="衰退/通缩/避险",   position=0.20, mom_weight=0.20),
+    0: dict(name="工业金属/能源牛市", position=0.85, mom_weight=0.00),
+    1: dict(name="大宗全面牛市",     position=1.00, mom_weight=0.05),
+    2: dict(name="停滞横盘期",       position=0.55, mom_weight=0.30),
+    3: dict(name="温和复苏期",       position=0.65, mom_weight=0.35),
+    4: dict(name="加息紧缩期",       position=0.00, mom_weight=0.05),
+    5: dict(name="衰退/通缩/避险",   position=0.20, mom_weight=0.30),
 }
 
 # C5（衰退/通缩/避险）状态下资产权重的强制约束（黄金保底，工业品封顶）
@@ -65,8 +65,10 @@ def get_regime_series(
     pca = PCA(n_components=n_components, random_state=42)
     X_pca = pca.fit_transform(X_sc)
 
-    km = KMeans(n_clusters=k, random_state=42, n_init=20)
-    raw_labels = km.fit_predict(X_pca)
+    from threadpoolctl import threadpool_limits
+    with threadpool_limits(limits=1):
+        km = KMeans(n_clusters=k, random_state=42, n_init=20)
+        raw_labels = km.fit_predict(X_pca)
 
     # 按 PC1（增长/通胀景气）方向排序，保证编号稳定
     center_pc1 = pd.Series(km.cluster_centers_[:, 0])
