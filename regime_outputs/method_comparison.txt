@@ -3,14 +3,14 @@
 
 方法                 最优K       轮廓系数       选K依据
 ---------------------------------------------
-KMeans               2      0.203 Silhouette
-PCA+KMeans           2      0.262 Silhouette
-GMM(BIC)             8      0.008        BIC
-GMM(Sil)             2      0.125 Silhouette
+KMeans               2      0.296 Silhouette
+PCA+KMeans           2      0.284 Silhouette
+GMM(BIC)             6      0.022        BIC
+GMM(Sil)             3      0.113 Silhouette
 
 方法                 K   最高Sharpe   最低Sharpe       差距
 --------------------------------------------------
-kmeans             2      +0.77      -0.16     0.93
-pca_kmeans         6      +1.26      -0.65     1.90
-gmm                8      +1.56      -0.64     2.20
-quadrant           4      +0.66      -0.20     0.86
+kmeans             2      +0.59      -0.11     0.70
+pca_kmeans         6      +1.66      -0.98     2.64
+gmm                6      +0.84      -1.89     2.73
+quadrant           3      +4.25      +0.15     4.11

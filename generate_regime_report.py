@@ -13,12 +13,12 @@ OUT_DIR  = _BASE / "regime_outputs"
 HTML_OUT = _BASE / "regime_report.html"
 
 CLUSTER_CONFIG = {
-    0: dict(name="工业金属/能源牛市", position=0.85, mom_weight=0.00, color="#1e8449"),
-    1: dict(name="大宗全面牛市",     position=1.00, mom_weight=0.05, color="#27ae60"),
-    2: dict(name="停滞横盘期",       position=0.55, mom_weight=0.30, color="#d68910"),
-    3: dict(name="温和复苏期",       position=0.65, mom_weight=0.35, color="#2980b9"),
-    4: dict(name="加息紧缩期",       position=0.00, mom_weight=0.05, color="#c0392b"),
-    5: dict(name="衰退/通缩/避险",   position=0.20, mom_weight=0.30, color="#7d3c98"),
+    0: dict(name="能源/通胀牛市",   position=0.85, mom_weight=0.00, color="#1e8449"),
+    1: dict(name="高增长横盘期",    position=0.45, mom_weight=0.25, color="#d68910"),
+    2: dict(name="加息紧缩期",     position=0.00, mom_weight=0.05, color="#c0392b"),
+    3: dict(name="大宗全面牛市",   position=1.00, mom_weight=0.05, color="#27ae60"),
+    4: dict(name="温和复苏期",     position=0.65, mom_weight=0.35, color="#2980b9"),
+    5: dict(name="衰退/通缩/避险", position=0.20, mom_weight=0.30, color="#7d3c98"),
 }
 
 FACTOR_CN = {
@@ -105,7 +105,12 @@ def sec_current(labels: pd.DataFrame) -> str:
     latest = labels.index[-1].strftime("%Y-%m-%d")
     cid    = int(labels.iloc[-1, 0])
     cfg    = CLUSTER_CONFIG[cid]
-    consec = sum(1 for v in reversed(labels.iloc[:, 0].tolist()) if int(v) == cid)
+    consec = 0
+    for v in reversed(labels.iloc[:, 0].tolist()):
+        if int(v) == cid:
+            consec += 1
+        else:
+            break
     c      = cfg["color"]
     return f"""
 <div class="section">
@@ -179,7 +184,7 @@ def sec_method(pca_sil: pd.DataFrame, km_sil: pd.DataFrame,
   </table>
   <div class="insight">
     ✅ <b>PCA+KMeans（K=6）</b>为策略选用方案：统计最优K=2，但K=6能额外识别
-    「加息紧缩（C4，仓位=0%）」和「衰退避险（C5，黄金保底60%）」等关键状态，
+    「加息紧缩（C2，仓位=0%）」和「衰退避险（C5，黄金保底60%）」等关键状态，
     轮廓系数（{pca5_sil:.3f}）与最优K=2（{pca2_sil:.3f}）差距仅 {pca2_sil-pca5_sil:.4f}，策略价值更高。
   </div>
 </div>"""
