@@ -5,7 +5,16 @@ model_outputs_ml/
 model_outputs_ml_elasticnet/
 model_outputs_ml_lgbm/
 数据.xlsx
+
+# ===== 数据与临时文件（建议放到 data/ 或本机路径）=====
+*.xlsx
+*.xls
+*.xlsm
+*.xlsb
+*.icloud
 ~$*.xlsx
+~$*.xls
+~$*.xlsm
 *.docx
 ~$*.docx
 .DS_Store

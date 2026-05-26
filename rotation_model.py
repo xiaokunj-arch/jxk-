@@ -84,6 +84,10 @@ class BacktestConfig:
     trend_filter_weeks: int = 0           # 单品种趋势过滤回溯周数（0=禁用）：自身动量为负则排除
     regime_pos_series: object = None      # Regime仓位时序（pd.Series），覆盖market_cash和max_position逻辑
     regime_cluster_series: object = None  # Regime Cluster编号时序（pd.Series），用于资产约束
+    use_vol_target: bool = False          # 是否启用波动率目标仓位
+    vol_target: float = 0.15             # 目标年化波动率（如0.15=15%）
+    vol_target_lookback: int = 12        # 波动率计算回溯周数
+    vol_target_max_scale: float = 1.0   # 仓位放大上限（≤1不加杠杆）
 
 
 def parse_args() -> argparse.Namespace:
@@ -191,6 +195,7 @@ def load_weekly_factors(path: Path) -> Dict[str, pd.Series]:
         "silver_cot": ["COT白银"],
         "copper_cot": ["COT铜"],
         "oil_cot": ["COT原油"],
+        "copper_roll": ["铜展期收益"],
     }
 
     # 多列sheet需单独处理
@@ -369,8 +374,10 @@ def build_signal_panel(weekly_prices: pd.DataFrame, factors: Dict[str, pd.Series
     # COT管理资金净头寸（用滚动z-score水平位置，IC为负的取反：过度拥挤时价格反转）
     macro_gold_cot   =  aligned_zscore("gold_cot",   52)   # 黄金：正向
     macro_silver_cot = -aligned_zscore("silver_cot", 52)   # 白银：反向（拥挤做多→反转）
-    macro_copper_cot = -aligned_zscore("copper_cot", 52)   # 铜：反向（拥挤做多→反转）
-    macro_oil_cot    =  aligned_zscore("oil_cot",    52)   # 原油：正向
+    macro_copper_cot  = -aligned_zscore("copper_cot", 52)   # 铜：反向（拥挤做多→反转）
+    macro_oil_cot     =  aligned_zscore("oil_cot",    52)   # 原油：正向
+    # 铜展期收益率：backwardation(正)→看涨，contango(负)→看跌
+    macro_copper_roll = aligned_zscore("copper_roll", 52)
 
     # 金银比均值回归：高于52周均值说明白银相对黄金偏便宜，对白银是正信号
     gs_ratio = (weekly_prices["黄金"] / weekly_prices["白银"]).replace([np.inf, -np.inf], np.nan)
@@ -380,7 +387,7 @@ def build_signal_panel(weekly_prices: pd.DataFrame, factors: Dict[str, pd.Series
     fund = pd.DataFrame(index=common_idx, columns=ASSETS, dtype=float)
     fund["黄金"] = 0.25 * macro_real + 0.20 * macro_dxy_pos + 0.20 * macro_vix_pos + 0.15 * macro_gold_oi_inv + 0.20 * macro_gold_cot
     fund["白银"] = 0.20 * macro_real + 0.20 * macro_dxy_pos + 0.25 * macro_gs + 0.15 * macro_silver_oi_inv + 0.20 * macro_silver_cot
-    fund["铜"]   = 0.20 * macro_real + 0.15 * macro_dxy + 0.25 * macro_pmi + 0.20 * macro_copper_fxi_inv + 0.20 * macro_copper_cot
+    fund["铜"]   = 0.20 * macro_real + 0.15 * macro_dxy + 0.20 * macro_pmi + 0.15 * macro_copper_fxi_inv + 0.15 * macro_copper_roll + 0.15 * macro_copper_cot
     fund["原油"] = 0.25 * macro_dxy + 0.20 * macro_pmi + 0.30 * macro_vix + 0.25 * macro_oil_cot
     fund["煤炭"] = 0.40 * macro_cn_pmi_inv + 0.30 * macro_fxi + 0.30 * macro_cn_ppi
 
@@ -492,6 +499,14 @@ def run_backtest(signal_panel: pd.DataFrame, cfg: BacktestConfig) -> Tuple[pd.Da
     trend_mom = trend_mom.reindex(score.index)
     ew_mom = ew_mom.reindex(score.index).fillna(0.0)
 
+    # 预计算波动率目标缩放系数（基于等权组合收益率）
+    vol_scale_series = pd.Series(1.0, index=score.index)
+    if cfg.use_vol_target:
+        ew_ret_all = rets.mean(axis=1).fillna(0.0)
+        realized_vol = ew_ret_all.rolling(cfg.vol_target_lookback, min_periods=max(1, cfg.vol_target_lookback // 2)).std() * np.sqrt(52)
+        raw_scale = cfg.vol_target / realized_vol.replace(0, np.nan)
+        vol_scale_series = raw_scale.clip(upper=cfg.vol_target_max_scale).fillna(1.0).reindex(score.index).fillna(1.0)
+
     weight_rows = []
     strat_rets = []
     prev_w = pd.Series(0.0, index=ASSETS)
@@ -520,6 +535,11 @@ def run_backtest(signal_panel: pd.DataFrame, cfg: BacktestConfig) -> Tuple[pd.Da
                     pos_ratio = rv
             except (KeyError, TypeError):
                 pass
+
+        # 波动率目标仓位缩放：高波动期自动降仓，低波动期仓位不超过max_position_ratio
+        if cfg.use_vol_target and pos_ratio > 0.0:
+            vscale = float(vol_scale_series.loc[dt]) if dt in vol_scale_series.index else 1.0
+            pos_ratio = min(pos_ratio * vscale, cfg.max_position_ratio)
 
         # 单品种趋势过滤：自身N周动量为负的资产评分置NaN，不参与选股
         if cfg.trend_filter_weeks > 0:

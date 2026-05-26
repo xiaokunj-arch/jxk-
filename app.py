@@ -40,6 +40,11 @@ st.set_page_config(
 
 st.title("📊 大宗商品轮动模型")
 
+st.markdown(
+    "<style>[data-testid='stIconMaterial']{overflow:hidden!important}</style>",
+    unsafe_allow_html=True,
+)
+
 
 # ─────────────────────────────────────────────
 # 数据加载（缓存，只读一次）
@@ -173,8 +178,9 @@ def build_signal_panel_custom(
     # COT管理资金净头寸（滚动z-score水平位置，IC为负的取反：过度拥挤时价格反转）
     macro_gold_cot   =  aligned_zscore("gold_cot",   52)   # 正向
     macro_silver_cot = -aligned_zscore("silver_cot", 52)   # 反向（拥挤做多→反转）
-    macro_copper_cot = -aligned_zscore("copper_cot", 52)   # 反向（拥挤做多→反转）
-    macro_oil_cot    =  aligned_zscore("oil_cot",    52)   # 正向
+    macro_copper_cot  = -aligned_zscore("copper_cot", 52)   # 反向（拥挤做多→反转）
+    macro_oil_cot     =  aligned_zscore("oil_cot",    52)   # 正向
+    macro_copper_roll =  aligned_zscore("copper_roll", 52)  # 铜展期收益：backwardation→看涨
 
     gs_ratio = (weekly_prices["黄金"] / weekly_prices["白银"]).replace([np.inf, -np.inf], np.nan)
     gs_ma52 = gs_ratio.rolling(52, min_periods=26).mean()
@@ -198,6 +204,7 @@ def build_signal_panel_custom(
             "copper_cot": macro_copper_cot, "oil_cot": macro_oil_cot, "gs_ratio": macro_gs,
             "us10y": macro_us10y, "yield_spread": macro_yield_spread,
             "credit_impulse": macro_credit_impulse,
+            "copper_roll": macro_copper_roll,
         }, index=common_idx)
         ic = compute_ic_fund(factor_matrix, weekly_prices.reindex(columns=ASSETS).pct_change(), ic_window)
         fund = (ml + ic) / 2.0
@@ -226,6 +233,10 @@ def build_signal_panel_custom(
             "copper_cot":   macro_copper_cot,
             "oil_cot":      macro_oil_cot,
             "gs_ratio":     macro_gs,
+            "us10y":        macro_us10y,
+            "yield_spread": macro_yield_spread,
+            "credit_impulse": macro_credit_impulse,
+            "copper_roll":  macro_copper_roll,
         }, index=common_idx)
         weekly_ret_for_ic = weekly_prices.reindex(columns=ASSETS).pct_change()
         fund = compute_ic_fund(factor_matrix, weekly_ret_for_ic, ic_window)
@@ -250,6 +261,7 @@ def build_signal_panel_custom(
             + fw["copper_dxy"] * macro_dxy
             + fw["copper_pmi"] * macro_pmi
             + fw["copper_fxi"] * copper_fxi_inv
+            + fw["copper_roll"] * macro_copper_roll
             + fw["copper_cot"] * macro_copper_cot
         )
         fund["原油"] = (
@@ -301,7 +313,7 @@ def build_signal_panel_custom(
     )
 
 
-def run_model(prices, facts, fw, cost_bps, mom_w, mom_lb, mom_weights, use_ivw=False, ivw_weeks=12, cash_threshold=-99.0, top_n_free=5, market_cash_threshold=-99.0, market_full_threshold=-99.0, max_position_ratio=1.0, fund_override=None, trend_filter_weeks=0, use_ic_fund=False, ic_window=52, regime_config=None):
+def run_model(prices, facts, fw, cost_bps, mom_w, mom_lb, mom_weights, use_ivw=False, ivw_weeks=12, cash_threshold=-99.0, top_n_free=5, market_cash_threshold=-99.0, market_full_threshold=-99.0, max_position_ratio=1.0, fund_override=None, trend_filter_weeks=0, use_ic_fund=False, ic_window=52, regime_config=None, use_vol_target=False, vol_target=0.15, vol_target_lookback=12):
     cfg = BacktestConfig(
         cost_bps=cost_bps,
         momentum_lookback_weeks=mom_lb,
@@ -319,6 +331,9 @@ def run_model(prices, facts, fw, cost_bps, mom_w, mom_lb, mom_weights, use_ivw=F
         market_full_threshold=market_full_threshold,
         max_position_ratio=max_position_ratio,
         trend_filter_weeks=trend_filter_weeks,
+        use_vol_target=use_vol_target,
+        vol_target=vol_target,
+        vol_target_lookback=vol_target_lookback,
     )
     cfg.max_weight_per_asset = 1.0
     cfg.max_weight_per_sector = 1.0
@@ -413,6 +428,15 @@ with st.sidebar:
                                           help="5品种等权平均动量高于此值时按模型满仓；两线之间按比例持仓（半仓过渡）")
     max_position_ratio = st.slider("整体仓位上限", 0.1, 1.0, 1.0, 0.05,
                                    help="模型最多投入的总仓位比例。例如设0.5则模型最多半仓，无论动量如何")
+    use_vol_target = st.checkbox("波动率目标仓位", value=False,
+                                  help="根据等权组合实现波动率动态缩放整体仓位，高波动期自动降仓，不超过整体仓位上限")
+    vol_target = 0.15
+    vol_target_lookback = 12
+    if use_vol_target:
+        vol_target = st.slider("目标年化波动率", 0.05, 0.40, 0.15, 0.01,
+                               help="组合实现波动率超过此值时按比例降仓，低于此值时仓位不超过整体上限")
+        vol_target_lookback = st.slider("波动率计算回溯周数", 4, 52, 12, 1,
+                                        help="计算实现波动率所用的滚动窗口")
     use_trend_filter = st.checkbox("启用趋势过滤", value=False, help="单品种自身动量为负时不持有，只做上升趋势的资产；可与空仓叠加使用")
     trend_filter_weeks = 0
     if use_trend_filter:
@@ -473,11 +497,13 @@ with st.sidebar:
     s_cot = st.slider("COT管理资金",   -1.0, 1.0,  0.20, 0.05, key="s_cot")
 
     st.header("🔩 铜")
-    c_rr  = st.slider("实际利率",    -1.0, 1.0,  0.25, 0.05, key="c_rr")
-    c_dxy = st.slider("美元指数",    -1.0, 1.0,  0.20, 0.05, key="c_dxy")
-    c_pmi = st.slider("PMI",         -1.0, 1.0,  0.30, 0.05, key="c_pmi")
-    c_fxi = st.slider("FXI中国需求", -1.0, 1.0,  0.25, 0.05, key="c_fxi")
-    c_cot = st.slider("COT管理资金", -1.0, 1.0,  0.20, 0.05, key="c_cot")
+    c_rr   = st.slider("实际利率",        -1.0, 1.0,  0.20, 0.05, key="c_rr")
+    c_dxy  = st.slider("美元指数",        -1.0, 1.0,  0.15, 0.05, key="c_dxy")
+    c_pmi  = st.slider("PMI",             -1.0, 1.0,  0.20, 0.05, key="c_pmi")
+    c_fxi  = st.slider("FXI中国需求",     -1.0, 1.0,  0.15, 0.05, key="c_fxi")
+    c_roll = st.slider("展期收益率",       -1.0, 1.0,  0.15, 0.05, key="c_roll",
+                       help="SHFE铜近月/远月展期收益率z-score，backwardation(正)→看涨，contango(负)→看跌")
+    c_cot  = st.slider("COT管理资金",     -1.0, 1.0,  0.15, 0.05, key="c_cot")
 
     st.header("🛢️ 原油")
     o_dxy = st.slider("美元指数",    -1.0, 1.0,  0.40, 0.05, key="o_dxy")
@@ -498,7 +524,7 @@ with st.sidebar:
     for _name, _vals in [
         ("黄金", [g_rr, g_dxy, g_vix, g_oi, g_cot]),
         ("白银", [s_rr, s_dxy, s_gs, s_oi, s_cot]),
-        ("铜",   [c_rr, c_dxy, c_pmi, c_fxi, c_cot]),
+        ("铜",   [c_rr, c_dxy, c_pmi, c_fxi, c_roll, c_cot]),
         ("原油", [o_dxy, o_pmi, o_vix, o_cot]),
         ("煤炭", [coal_cn_pmi, coal_fxi, coal_cn_ppi]),
     ]:
@@ -510,6 +536,11 @@ with st.sidebar:
             st.warning(_w)
 
     run_btn = st.button("▶ 运行回测", type="primary", use_container_width=True)
+
+    st.divider()
+    st.subheader("🔄 数据更新")
+    st.caption("手动维护：中国PMI/PPI、白银持仓、煤炭库存")
+    update_btn = st.button("一键更新所有数据", use_container_width=True, key="update_btn")
 
     st.divider()
     with st.expander("🔍 数据诊断", expanded=False):
@@ -528,12 +559,57 @@ with st.sidebar:
                 st.write(f"  - `{k}`: 空")
 
 # ─────────────────────────────────────────────
+# 一键更新数据
+# ─────────────────────────────────────────────
+if update_btn:
+    import importlib
+    import contextlib
+
+    _UPDATE_STEPS = [
+        ("全量刷新（FRED/EIA/yfinance/akshare）", "fetch_factors"),
+        ("宏观因子增量追加（FRED + akshare）",      "update_macro_factors"),
+        ("价格与收益率增量追加（yfinance + FRED）",  "update_remaining"),
+        ("COT 持仓报告（CFTC）",                   "fetch_cot"),
+        ("期货价格补齐（yfinance）",                "fill_futures_yf"),
+        ("铜展期收益率（SHFE）",                   "fetch_copper_roll"),
+    ]
+
+    all_ok = True
+    with st.status("正在更新数据，请稍候...", expanded=True) as _status:
+        for _step_name, _module_name in _UPDATE_STEPS:
+            st.write(f"⏳ **{_step_name}**")
+            _buf = io.StringIO()
+            try:
+                _mod = importlib.import_module(_module_name)
+                with contextlib.redirect_stdout(_buf):
+                    _mod.main()
+                _out = _buf.getvalue().strip()
+                if _out:
+                    st.code(_out, language=None)
+                st.write(f"✅ {_step_name} 完成")
+            except Exception as _e:
+                _out = _buf.getvalue().strip()
+                if _out:
+                    st.code(_out, language=None)
+                st.write(f"❌ {_step_name} 失败：`{_e}`")
+                all_ok = False
+
+        if all_ok:
+            _status.update(label="✅ 全部数据更新完成！", state="complete", expanded=False)
+        else:
+            _status.update(label="⚠️ 部分步骤失败，请查看详情", state="error", expanded=True)
+
+    if all_ok:
+        st.cache_data.clear()
+        st.rerun()
+
+# ─────────────────────────────────────────────
 # 收集参数 & 运行
 # ─────────────────────────────────────────────
 fund_weights = {
     "gold_real_rate": g_rr, "gold_dxy": g_dxy, "gold_vix": g_vix, "gold_oi": g_oi, "gold_cot": g_cot,
     "silver_real_rate": s_rr, "silver_dxy": s_dxy, "silver_gs": s_gs, "silver_oi": s_oi, "silver_cot": s_cot,
-    "copper_real_rate": c_rr, "copper_dxy": c_dxy, "copper_pmi": c_pmi, "copper_fxi": c_fxi, "copper_cot": c_cot,
+    "copper_real_rate": c_rr, "copper_dxy": c_dxy, "copper_pmi": c_pmi, "copper_fxi": c_fxi, "copper_roll": c_roll, "copper_cot": c_cot,
     "oil_dxy": o_dxy, "oil_pmi": o_pmi, "oil_vix": o_vix, "oil_cot": o_cot,
     "coal_cn_pmi": coal_cn_pmi, "coal_fxi": coal_fxi, "coal_cn_ppi": coal_cn_ppi,
 }
@@ -557,6 +633,9 @@ if "result" not in st.session_state or run_btn:
             use_ic_fund=use_ic_fund,
             ic_window=ic_window,
             regime_config=regime_df,
+            use_vol_target=use_vol_target,
+            vol_target=vol_target,
+            vol_target_lookback=vol_target_lookback,
         )
     st.session_state.result = (weights, strategy_ret, nav)
 

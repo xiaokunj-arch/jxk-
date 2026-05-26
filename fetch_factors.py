@@ -140,7 +140,8 @@ def download_yfinance(ticker: str, col_name: str, field: str = "Close") -> pd.Da
         df.index.name = "日期"
         df = df.reset_index()
         df["日期"] = pd.to_datetime(df["日期"])
-        df = df.dropna().sort_values("日期").reset_index(drop=True)
+        today = pd.Timestamp.today().normalize()
+        df = df[df["日期"] < today].dropna().sort_values("日期").reset_index(drop=True)
         return df
     except Exception as e:
         print(f"    ❌ yfinance {ticker} 失败: {e}")
@@ -239,46 +240,6 @@ def main():
     except Exception as e:
         print(f"❌ {e}")
         failed.append("美债收益率")
-
-    # ── 中国制造业PMI + 中国PPI（akshare）──
-    if HAS_AKSHARE:
-        print("\n【中国宏观数据（akshare）】")
-
-        # 中国制造业PMI
-        print("  ↓ 中国制造业PMI...", end=" ", flush=True)
-        try:
-            df_pmi = ak.macro_china_pmi_yearly()
-            df_pmi = df_pmi[["日期", "今值"]].copy()
-            df_pmi.columns = ["日期", "中国官方制造业PMI"]
-            df_pmi["日期"] = pd.to_datetime(df_pmi["日期"])
-            df_pmi["中国官方制造业PMI"] = pd.to_numeric(df_pmi["中国官方制造业PMI"], errors="coerce")
-            df_pmi = df_pmi.dropna().sort_values("日期").reset_index(drop=True)
-            write_sheet(wb, "中国制造业PMI", df_pmi)
-            print(f"✅ {len(df_pmi)} 行，最新: {df_pmi['日期'].iloc[-1].date()}")
-            results.append("中国制造业PMI")
-        except Exception as e:
-            print(f"❌ {e}")
-            failed.append("中国制造业PMI")
-        time.sleep(0.5)
-
-        # 中国PPI
-        print("  ↓ 中国PPI...", end=" ", flush=True)
-        try:
-            df_ppi = ak.macro_china_ppi_yearly()
-            df_ppi = df_ppi[["日期", "今值"]].copy()
-            df_ppi.columns = ["日期", "中国PPI同比(%)"]
-            df_ppi["日期"] = pd.to_datetime(df_ppi["日期"])
-            df_ppi["中国PPI同比(%)"] = pd.to_numeric(df_ppi["中国PPI同比(%)"], errors="coerce")
-            df_ppi = df_ppi.dropna().sort_values("日期").reset_index(drop=True)
-            write_sheet(wb, "中国ppi", df_ppi)
-            print(f"✅ {len(df_ppi)} 行，最新: {df_ppi['日期'].iloc[-1].date()}")
-            results.append("中国ppi")
-        except Exception as e:
-            print(f"❌ {e}")
-            failed.append("中国ppi")
-        time.sleep(0.5)
-    else:
-        print("\n⚠️ akshare 未安装，跳过中国PMI/PPI自动下载（可从 Wind 手动补充）")
 
     # ── 焦煤期货（大商所JM主力合约，替代已停牌的郑商所ZC动力煤）──
     print("\n【焦煤期货价格（大商所JM0）】")
