@@ -600,6 +600,15 @@ if update_btn:
             _status.update(label="⚠️ 部分步骤失败，请查看详情", state="error", expanded=True)
 
     if all_ok:
+        # 数据更新后自动重新生成 Regime 报告
+        try:
+            import generate_regime_report as _grr_update
+            import os as _os
+            _os.chdir(Path(__file__).parent)
+            with st.spinner("重新生成 Regime 报告..."):
+                _grr_update.main()
+        except Exception as _e:
+            st.warning(f"Regime 报告生成失败（不影响回测）：{_e}")
         st.cache_data.clear()
         st.rerun()
 
