@@ -846,8 +846,10 @@ _report_path = Path(__file__).parent / "regime_report.html"
 
 def _build_report():
     import os
+    import regime_analysis as _ra
     os.chdir(Path(__file__).parent)
-    _grr.main()
+    _ra.main()   # 先更新 regime_outputs/ 里的 CSV
+    _grr.main()  # 再从 CSV 生成 HTML
 
 col_r1, col_r2 = st.columns([1, 6])
 with col_r1:
