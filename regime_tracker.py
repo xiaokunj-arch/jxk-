@@ -11,13 +11,14 @@ Regime Tracker — 宏观周期识别与仓位控制模块
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
-from sklearn.cluster import KMeans
-from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
 
 from regime_analysis import build_regime_features, PCA_FEATURES
+
+_CSV_LABELS = Path(__file__).parent / "regime_outputs" / "regime_labels_pca_kmeans.csv"
 
 # ── Cluster 配置 ─────────────────────────────────────────────────────────────
 # position  : 该Cluster下的基准总仓位比例
@@ -59,32 +60,10 @@ def get_regime_series(
     common_idx = prices.index
     feat_df = build_regime_features(factors, common_idx, weekly_prices=prices)
 
-    valid = feat_df[PCA_FEATURES].dropna()
-    scaler = StandardScaler()
-    X_sc = scaler.fit_transform(valid)
-    pca = PCA(n_components=n_components, random_state=42)
-    X_pca = pca.fit_transform(X_sc)
-
-    from threadpoolctl import threadpool_limits
-    with threadpool_limits(limits=1):
-        km = KMeans(n_clusters=k, random_state=42, n_init=20)
-        raw_labels = km.fit_predict(X_pca)
-
-    # 按各Cluster成员的平均PMI排序（降序），与 regime_analysis.py 保持一致
-    pmi_col = PCA_FEATURES.index("pmi_level")
-    cluster_pmi_mean = pd.Series(
-        [X_sc[raw_labels == c, pmi_col].mean() for c in range(k)]
-    )
-    rank_map = cluster_pmi_mean.rank(ascending=False).astype(int) - 1
-    label_remap = {old: int(new) for old, new in rank_map.items()}
-    labels = pd.Series(
-        [label_remap[lb] for lb in raw_labels],
-        index=valid.index,
-        name="cluster",
-    )
-
-    # 前向填充到完整时间轴（宏观数据缺失的早期用首个有效值）
-    labels = labels.reindex(common_idx).ffill().bfill()
+    # 直接读取 regime_analysis 生成的 CSV，避免重跑 KMeans 导致结果不稳定
+    csv_labels = pd.read_csv(_CSV_LABELS, index_col=0, parse_dates=True).iloc[:, 0]
+    # 对齐到完整时间轴：CSV 覆盖范围内用 CSV 值，更新的日期前向填充最后已知标签
+    labels = csv_labels.reindex(common_idx).ffill().bfill()
 
     # C2（加息紧缩）+ 降息方向 → 自动升级为 C3（大宗全面牛市）
     # us10y_delta < 0 表示12周利率变化方向为负（降息/宽松周期）
