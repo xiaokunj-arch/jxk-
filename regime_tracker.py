@@ -25,11 +25,11 @@ _CSV_LABELS = Path(__file__).parent / "regime_outputs" / "regime_labels_pca_kmea
 # mom_weight: 动量在综合得分中的权重（IC权重 = 1 - mom_weight）
 CLUSTER_CONFIG: dict[int, dict] = {
     0: dict(name="能源/通胀牛市",   position=0.85, mom_weight=0.00),
-    1: dict(name="高增长横盘期",    position=0.45, mom_weight=0.25),
+    1: dict(name="高增长横盘期",    position=0.45, mom_weight=0.30),
     2: dict(name="加息紧缩期",     position=0.00, mom_weight=0.05),
-    3: dict(name="大宗全面牛市",   position=1.00, mom_weight=0.05),
-    4: dict(name="温和复苏期",     position=0.65, mom_weight=0.35),
-    5: dict(name="衰退/通缩/避险", position=0.20, mom_weight=0.30),
+    3: dict(name="大宗全面牛市",   position=1.00, mom_weight=0.10),
+    4: dict(name="温和复苏期",     position=0.65, mom_weight=0.10),
+    5: dict(name="衰退/通缩/避险", position=0.20, mom_weight=0.10),
 }
 
 # C5（衰退/通缩/避险）状态下资产权重的强制约束（黄金保底，工业品封顶）
