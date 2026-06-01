@@ -28,12 +28,12 @@ HTML_OUT = Path("regime_report_k6.html")
 K        = 6
 
 CLUSTER_CONFIG = {
-    0: dict(name="工业金属/能源牛市", position=0.85, mom_weight=0.55, color="#1e8449"),
-    1: dict(name="大宗全面牛市",     position=1.00, mom_weight=0.65, color="#27ae60"),
-    2: dict(name="停滞横盘期",       position=0.55, mom_weight=0.35, color="#d68910"),
-    3: dict(name="温和复苏期",       position=0.65, mom_weight=0.30, color="#2980b9"),
-    4: dict(name="加息紧缩期",       position=0.00, mom_weight=0.50, color="#c0392b"),
-    5: dict(name="衰退/通缩/避险",   position=0.20, mom_weight=0.20, color="#7d3c98"),
+    0: dict(name="美国过热·通胀扩张",    position=0.85, mom_weight=0.10, color="#1e8449"),
+    1: dict(name="经济见顶·高利率承压",  position=0.20, mom_weight=0.10, color="#c0392b"),
+    2: dict(name="增长预期走弱·利率下行", position=0.50, mom_weight=0.10, color="#d68910"),
+    3: dict(name="全球需求共振·商品牛市", position=1.00, mom_weight=0.10, color="#27ae60"),
+    4: dict(name="激进加息·流动性收缩",  position=0.00, mom_weight=0.05, color="#7d3c98"),
+    5: dict(name="衰退预期·货币宽松",    position=0.90, mom_weight=0.10, color="#2980b9"),
 }
 
 FACTOR_CN = {

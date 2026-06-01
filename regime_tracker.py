@@ -21,20 +21,22 @@ from regime_analysis import build_regime_features, PCA_FEATURES
 _CSV_LABELS = Path(__file__).parent / "regime_outputs" / "regime_labels_pca_kmeans.csv"
 
 # ── Cluster 配置 ─────────────────────────────────────────────────────────────
+# 基于新ETF/LOF价格（512400/石油LOF/煤炭LOF）重新标定，2016-2026样本
+# 各Cluster等权年化收益: C3=+37.7% C5=+31.6% C0=+30.3% C2=+10.4% C1=-9.0% C4=-13.2%
 # position  : 该Cluster下的基准总仓位比例
-# mom_weight: 动量在综合得分中的权重（IC权重 = 1 - mom_weight）
+# mom_weight: 动量在综合得分中的权重（基本面权重 = 1 - mom_weight）
 CLUSTER_CONFIG: dict[int, dict] = {
-    0: dict(name="能源/通胀牛市",   position=0.85, mom_weight=0.00),
-    1: dict(name="高增长横盘期",    position=0.45, mom_weight=0.30),
-    2: dict(name="加息紧缩期",     position=0.00, mom_weight=0.05),
-    3: dict(name="大宗全面牛市",   position=1.00, mom_weight=0.10),
-    4: dict(name="温和复苏期",     position=0.65, mom_weight=0.10),
-    5: dict(name="衰退/通缩/避险", position=0.20, mom_weight=0.10),
+    0: dict(name="美国过热·通胀扩张",   position=0.85, mom_weight=0.10),
+    1: dict(name="经济见顶·高利率承压", position=0.20, mom_weight=0.10),
+    2: dict(name="增长预期走弱·利率下行", position=0.50, mom_weight=0.10),
+    3: dict(name="全球需求共振·商品牛市", position=1.00, mom_weight=0.10),
+    4: dict(name="激进加息·流动性收缩", position=0.00, mom_weight=0.05),
+    5: dict(name="衰退预期·货币宽松",   position=0.90, mom_weight=0.10),
 }
 
-# C5（衰退/通缩/避险）状态下资产权重的强制约束（黄金保底，工业品封顶）
-CLUSTER5_FLOOR = {"黄金": 0.60}
-CLUSTER5_CAP   = {"铜": 0.10, "原油": 0.10, "煤炭": 0.10}
+# C4（全面熊市/衰退）无特殊资产约束，直接空仓
+CLUSTER5_FLOOR = {}
+CLUSTER5_CAP   = {}
 
 
 def get_regime_series(
@@ -88,29 +90,6 @@ def apply_asset_constraints(
 ) -> pd.Series:
     """
     对给定 Cluster 的目标权重应用资产层面约束。
-    仅 C5（衰退/通缩/避险）有约束：黄金保底 60%，工业品上限 10%。
-    其他 Cluster 直接返回原始 target。
+    当前各Cluster均无强制约束，直接返回原始 target。
     """
-    if cluster != 5:
-        return target
-
-    t = target.copy()
-    total = t.sum()
-    if total <= 0:
-        return t
-
-    # 1. 先对工业品执行上限
-    for asset, cap in CLUSTER5_CAP.items():
-        if asset in t.index:
-            t[asset] = min(t[asset], cap * total)
-
-    # 2. 将超出部分加到黄金
-    if "黄金" in t.index:
-        t["黄金"] = max(t.get("黄金", 0.0), CLUSTER5_FLOOR["黄金"] * total)
-
-    # 3. 重新归一化（保持总权重不变）
-    new_total = t.sum()
-    if new_total > 0:
-        t = t / new_total * total
-
-    return t
+    return target

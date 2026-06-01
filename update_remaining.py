@@ -101,8 +101,8 @@ def download_fred_curl(series_id: str) -> pd.DataFrame | None:
 # ─────────────────────────────────────────────
 # 收益率重计算（来自 fill_returns.py 逻辑）
 # ─────────────────────────────────────────────
-PRICE_COLS = [(0, 1), (2, 3), (4, 5), (6, 7)]
-ASSET_NAMES = ["黄金", "银", "铜", "布伦特原油"]
+PRICE_COLS = [(0, 1), (2, 3), (4, 5), (6, 7), (8, 9)]
+ASSET_NAMES = ["黄金", "银", "大成有色ETF", "石油LOF", "煤炭LOF"]
 
 
 def build_series(rows, dc, pc):
@@ -247,7 +247,7 @@ def main():
     write_sheet(wb, "月收益率",    headers, align([monthly_rets(s)  for s in series_list]))
     write_sheet(wb, "近三月收益率", headers, align([quarterly_rets(s) for s in series_list]))
     write_sheet(wb, "近六月收益率", headers, align([semi_rets(s)     for s in series_list]))
-    print("  ✅ 日/月/近三月/近六月收益率 已重算，基于期货价格最新至 2026-04-26")
+    print("  ✅ 日/月/近三月/近六月收益率 已重算（黄金/银/大成有色ETF/石油LOF/煤炭LOF）")
 
     wb.save(MASTER_FILE)
     print("\n✅ 全部保存完成。")

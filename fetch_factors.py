@@ -241,28 +241,7 @@ def main():
         print(f"❌ {e}")
         failed.append("美债收益率")
 
-    # ── 焦煤期货（大商所JM主力合约，替代已停牌的郑商所ZC动力煤）──
-    print("\n【焦煤期货价格（大商所JM0）】")
-    print("  ↓ 焦煤主力合约（期货价格表第9/10列）...", end=" ", flush=True)
-    try:
-        df_jm = ak.futures_zh_daily_sina(symbol="JM0")
-        df_jm["date"] = pd.to_datetime(df_jm["date"])
-        df_jm = df_jm.sort_values("date").dropna(subset=["close"])
-
-        ws_px = wb["期货价格"]
-        ws_px.cell(1, 9, "日期")
-        ws_px.cell(1, 10, "期货收盘价(连续):大商所焦煤JM")
-        for row in ws_px.iter_rows(min_row=2, min_col=9, max_col=10):
-            for cell in row:
-                cell.value = None
-        for i, (_, row) in enumerate(df_jm.iterrows(), start=2):
-            ws_px.cell(i, 9, row["date"].date())
-            ws_px.cell(i, 10, float(row["close"]))
-        print(f"✅ {len(df_jm)} 行，最新: {df_jm['date'].iloc[-1].date()}")
-        results.append("焦煤期货(JM0)")
-    except Exception as e:
-        print(f"❌ {e}")
-        failed.append("焦煤期货(JM0)")
+    # 煤炭LOF(160819) 和 石油LOF(160416) 由 Wind 手动维护，此处不覆盖
 
     # ── 中国信贷脉冲（M2 + GDP 计算） ──
     print("\n【中国信贷脉冲】")

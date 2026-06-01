@@ -101,6 +101,7 @@ if not WORKBOOK_PATH.exists():
     st.stop()
 
 weekly_prices, factors = load_data()
+weekly_prices = weekly_prices[weekly_prices.index >= "2016-01-01"]
 
 
 # ─────────────────────────────────────────────
@@ -428,36 +429,36 @@ with st.sidebar:
                                           help="5品种等权平均动量高于此值时按模型满仓；两线之间按比例持仓（半仓过渡）")
     max_position_ratio = st.slider("整体仓位上限", 0.1, 1.0, 1.0, 0.05,
                                    help="模型最多投入的总仓位比例。例如设0.5则模型最多半仓，无论动量如何")
-    use_vol_target = st.checkbox("波动率目标仓位", value=False,
+    use_vol_target = st.checkbox("波动率目标仓位", value=True,
                                   help="根据等权组合实现波动率动态缩放整体仓位，高波动期自动降仓，不超过整体仓位上限")
     vol_target = 0.15
-    vol_target_lookback = 12
+    vol_target_lookback = 27
     if use_vol_target:
         vol_target = st.slider("目标年化波动率", 0.05, 0.40, 0.15, 0.01,
                                help="组合实现波动率超过此值时按比例降仓，低于此值时仓位不超过整体上限")
-        vol_target_lookback = st.slider("波动率计算回溯周数", 4, 52, 12, 1,
+        vol_target_lookback = st.slider("波动率计算回溯周数", 4, 52, 27, 1,
                                         help="计算实现波动率所用的滚动窗口")
     use_trend_filter = st.checkbox("启用趋势过滤", value=False, help="单品种自身动量为负时不持有，只做上升趋势的资产；可与空仓叠加使用")
     trend_filter_weeks = 0
     if use_trend_filter:
-        trend_filter_weeks = st.slider("趋势过滤回溯周数", 4, 52, 12, 1,
+        trend_filter_weeks = st.slider("趋势过滤回溯周数", 4, 52, 10, 1,
                                        help="若资产过去N周收益为负则排除，不参与当周选股")
-    use_cash = st.checkbox("启用低分过滤", value=False, help="单品种综合得分低于阈值时不配置；高于阈值的品种全部配置；全部低于阈值时完全空仓")
+    use_cash = st.checkbox("启用低分过滤", value=True, help="单品种综合得分低于阈值时不配置；高于阈值的品种全部配置；全部低于阈值时完全空仓")
     cash_threshold = -99.0
     top_n_free = 5
     if use_cash:
-        cash_threshold = st.slider("最低持仓分数（z-score）", -2.0, 0.5, -0.5, 0.1,
+        cash_threshold = st.slider("最低持仓分数（z-score）", -2.0, 0.5, 0.0, 0.1,
                                    help="低于此分数的品种直接排除；高于的品种全部配置（softmax加权）")
     if use_ivw:
-        ivw_weeks = st.slider("波动率回溯周数", 4, 52, 12, 1, help="计算反波动率加权所用的滚动波动率窗口")
-    use_ml_fund = st.checkbox("ML基本面权重（Ridge）", value=False)
-    use_ic_fund = st.checkbox("IC动态基本面权重", value=False)
+        ivw_weeks = st.slider("波动率回溯周数", 4, 52, 10, 1, help="计算反波动率加权所用的滚动波动率窗口")
+    use_ml_fund = st.checkbox("ML基本面权重（Ridge）", value=True)
+    use_ic_fund = st.checkbox("IC动态基本面权重", value=True)
     ic_window = 52
     if use_ic_fund:
         ic_window = st.slider("IC回溯窗口（周）", 26, 156, 52, 13,
                               help="计算滚动IC所用的历史窗口，越大越稳定但适应性越低")
-    use_regime = st.checkbox("启用Regime仓位控制（KMeans周期识别）", value=False,
-                             help="基于PCA+KMeans识别宏观周期(6类)，自动调整总仓位和动量/IC权重比例")
+    use_regime = st.checkbox("KMeans周期识别", value=True,
+                             help="基于PCA+KMeans识别宏观周期(6类)，自动调整总仓位和动量/基本面比例")
     regime_df = None
     if use_regime:
         regime_df = compute_regime(weekly_prices, factors)
@@ -471,9 +472,9 @@ with st.sidebar:
     mom_lookback = st.slider("中期动量回溯周数", 4, 26, 12, 1)
 
     st.subheader("动量分项权重")
-    mw_short = st.slider("短期动量（4周）",  0.0, 1.0, 0.25, 0.05, key="mw_short")
-    mw_mid   = st.slider("中期动量（12周）", 0.0, 1.0, 0.50, 0.05, key="mw_mid")
-    mw_long  = st.slider("长期动量（52周）", 0.0, 1.0, 0.25, 0.05, key="mw_long")
+    mw_short = st.slider("短期动量（4周）",  0.0, 1.0, 0.30, 0.05, key="mw_short")
+    mw_mid   = st.slider("中期动量（12周）", 0.0, 1.0, 0.40, 0.05, key="mw_mid")
+    mw_long  = st.slider("长期动量（52周）", 0.0, 1.0, 0.30, 0.05, key="mw_long")
     mw_total = mw_short + mw_mid + mw_long
     if mw_total > 0:
         st.caption(f"合计：{mw_total:.2f}")
@@ -539,7 +540,7 @@ with st.sidebar:
 
     st.divider()
     st.subheader("🔄 数据更新")
-    st.caption("手动维护：中国PMI/PPI、白银持仓、煤炭库存")
+    st.caption("手动维护：中国PMI/PPI、美国CPI")
     update_btn = st.button("一键更新所有数据", use_container_width=True, key="update_btn")
 
     st.divider()
